@@ -5,7 +5,15 @@ import { validateConnection } from '../middleware/auth';
 import { createSonioxSession } from '../services/soniox-session';
 import { SegmentBuilder } from '../utils/segment-builder';
 import { AudioFileWriter } from '../services/audio-file-writer';
-import { AppMessage } from '../types';
+import { AppMessage, SonioxResponse } from '../types';
+import { FinalResultRecorder } from '../services/final-result-recorder';
+import { finalizeConversation } from '../services/conversation-finalizer';
+import { db } from '../db';
+import { mapSpeakersForConversation } from '../services/speaker-mapper';
+
+function genId(prefix: string): string {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
 
 export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   // 1. Auth
@@ -21,16 +29,166 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   let pendingCloseStream = false;
   let committedEnd = 0; // Track last sent segment end to prevent overlap
   let wavFinalized = false; // Prevent double-finalize
+  let finalizeStarted = false;
+  let firstAudioFrameAt: string | null = null;
 
   // Audio file writer - saves WAV with RIFF header
   const AUDIO_DIR = path.join(process.cwd(), 'audio-uploads');
+  const RAW_RESULTS_DIR = path.join(process.cwd(), 'raw_results');
+  const FINALIZED_RESULTS_DIR = path.join(process.cwd(), 'finalized_results');
   const sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const connectedAt = new Date().toISOString();
+  const conversationId = genId('conv');
+  const audioFileId = genId('aud');
   const audioFilePath = path.join(AUDIO_DIR, sessionId + '.wav');
+  const recorder = new FinalResultRecorder(sessionId, RAW_RESULTS_DIR);
   const wavWriter = new AudioFileWriter(audioFilePath, {
     sampleRate: 16000,
     channels: 1,
     bitsPerSample: 16,
   });
+
+  void recorder.init().catch(err => {
+    console.error('[Recorder] init failed:', err);
+  });
+
+  try {
+    db.prepare(`
+      INSERT INTO conversations (
+        id, session_id, status, websocket_connected_at, first_audio_frame_at,
+        raw_result_path, audio_file_path, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      conversationId,
+      sessionId,
+      'recording',
+      connectedAt,
+      connectedAt,
+      recorder.filePath,
+      audioFilePath,
+      connectedAt,
+      connectedAt,
+    );
+  } catch (err) {
+    console.error('[DB] failed to insert conversation row:', err);
+  }
+
+  async function ensureWavFinalized(logPrefix: string): Promise<void> {
+    if (wavFinalized) return;
+    wavFinalized = true;
+    try {
+      const filepath = await wavWriter.finish();
+      console.log(`${logPrefix} ${filepath}`);
+    } catch (err) {
+      console.error('[AudioFile] Failed to save WAV:', err);
+    }
+  }
+
+  async function finalizeOnce(reason: 'close_stream' | 'ws_close' | 'soniox_error'): Promise<void> {
+    if (finalizeStarted) return;
+    finalizeStarted = true;
+
+    await ensureWavFinalized('[AudioFile] Saved WAV:');
+
+    try {
+      const finalized = await finalizeConversation({
+        sessionId,
+        rawTranscriptPath: recorder.filePath,
+        outputDir: FINALIZED_RESULTS_DIR,
+        recordingStartedAt: firstAudioFrameAt ?? connectedAt,
+      });
+
+      const now = new Date().toISOString();
+      const durationMs = finalized.segments.length
+        ? Math.max(...finalized.segments.map(seg => seg.end_ms))
+        : 0;
+
+      const tx = db.transaction(() => {
+        db.prepare(`
+          INSERT OR REPLACE INTO audio_files (
+            id, conversation_id, file_path, file_name, duration_ms,
+            sample_rate, channels, bits_per_sample, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          audioFileId,
+          conversationId,
+          audioFilePath,
+          path.basename(audioFilePath),
+          durationMs,
+          16000,
+          1,
+          16,
+          now,
+          now,
+        );
+
+        db.prepare(`
+          DELETE FROM conversation_segments WHERE conversation_id = ?
+        `).run(conversationId);
+
+        const insertSeg = db.prepare(`
+          INSERT INTO conversation_segments (
+            id, conversation_id, audio_file_id,
+            start_ms, end_ms, absolute_start_time, absolute_end_time,
+            speaker_label, speaker_id, speaker_name, text,
+            confidence, resolution_method, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        for (const seg of finalized.segments) {
+          insertSeg.run(
+            seg.id,
+            conversationId,
+            audioFileId,
+            seg.start_ms,
+            seg.end_ms,
+            seg.absolute_start_time,
+            seg.absolute_end_time,
+            seg.speaker_label,
+            null,
+            null,
+            seg.text,
+            null,
+            'soniox_finalized',
+            now,
+            now,
+          );
+        }
+
+        db.prepare(`
+          UPDATE conversations
+          SET status = ?, first_audio_frame_at = ?, ended_at = ?, raw_result_path = ?, updated_at = ?, error_message = NULL
+          WHERE id = ?
+        `).run(
+          'completed',
+          firstAudioFrameAt ?? connectedAt,
+          now,
+          finalized.outPath,
+          now,
+          conversationId,
+        );
+      });
+
+      tx();
+
+      void mapSpeakersForConversation(conversationId).catch(err => {
+        console.error('[SpeakerMapper] failed:', err);
+      });
+
+      console.log(`[Finalize] session=${sessionId}, reason=${reason}, output=${finalized.outPath}, segments=${finalized.segments.length}`);
+    } catch (err) {
+      console.error('[Finalize] failed:', err);
+      try {
+        db.prepare(`
+          UPDATE conversations
+          SET status = ?, ended_at = ?, error_message = ?, updated_at = ?
+          WHERE id = ?
+        `).run('failed', new Date().toISOString(), String((err as Error)?.message ?? err), new Date().toISOString(), conversationId);
+      } catch (dbErr) {
+        console.error('[DB] failed to mark conversation failed:', dbErr);
+      }
+    }
+  }
 
   // 2. Connect to Soniox
   try {
@@ -42,12 +200,16 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   }
 
   // 3. Listen for Soniox results
-  sonioxSession.on('result', (result: { tokens: any[] }) => {
+  sonioxSession.on('result', (result: SonioxResponse) => {
     const tokens = result.tokens;
 
     if (tokens.length === 0) {
       return;
     }
+
+    void recorder.appendResult(result).catch(err => {
+      console.error('[Recorder] append failed:', err);
+    });
 
     // Filter tokens: only keep those ending at or after committedEnd (in ms)
     // This prevents overlapping segments from being sent
@@ -85,6 +247,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
 
   sonioxSession.on('error', (err: Error) => {
     console.error('[Soniox] Session error:', err);
+    void finalizeOnce('soniox_error');
     ws.close(1011, 'STT error');
   });
 
@@ -124,6 +287,9 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   ws.on('message', (data, isBinary) => {
     if (isBinary) {
       const audioData = data as Buffer;
+      if (!firstAudioFrameAt) {
+        firstAudioFrameAt = new Date().toISOString();
+      }
       // Write to WAV file
       wavWriter.write(audioData);
 
@@ -146,18 +312,13 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
               ws.send(JSON.stringify({ segments: [seg] }));
             }
             sonioxSession?.finish();
+            void finalizeOnce('close_stream');
           } else {
             pendingCloseStream = true;
           }
-          // Finalize WAV file
-          wavFinalized = true;
-          wavWriter.finish()
-            .then((filepath) => {
-              console.log(`[AudioFile] Saved WAV: ${filepath}`);
-            })
-            .catch((err) => {
-              console.error('[AudioFile] Failed to save WAV:', err);
-            });
+          if (!sonioxConnected) {
+            void finalizeOnce('close_stream');
+          }
         }
       } catch {
         // Ignore non-JSON messages
@@ -173,16 +334,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     } catch {
       // Ignore
     }
-    // Finalize WAV only if not already done (e.g., abnormal disconnect without CloseStream)
-    if (!wavFinalized) {
-      wavWriter.finish()
-        .then((filepath) => {
-          console.log(`[AudioFile] Saved WAV on close: ${filepath}`);
-        })
-        .catch((err) => {
-          console.error('[AudioFile] Failed to save WAV on close:', err);
-        });
-    }
+    void finalizeOnce('ws_close');
   });
 
   ws.on('error', (err: Error) => {

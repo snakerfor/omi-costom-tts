@@ -31,8 +31,8 @@ export class SegmentBuilder {
     const shouldFlush =
       this.buffer.length > 0 &&
       (token.speaker !== prev?.speaker ||
-        token.start_ms - (prev?.end_ms ?? 0) > SILENCE_GAP_MS ||
-        token.end_ms - (this.buffer[0]?.start_ms ?? 0) > MAX_DURATION_MS);
+        (Number(token.start_ms ?? 0) - Number(prev?.end_ms ?? 0)) > SILENCE_GAP_MS ||
+        (Number(token.end_ms ?? 0) - Number(this.buffer[0]?.start_ms ?? 0)) > MAX_DURATION_MS);
 
     if (shouldFlush) {
       const seg = this.flush();

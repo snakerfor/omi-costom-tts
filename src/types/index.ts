@@ -1,9 +1,9 @@
 // Soniox token from WebSocket response
 export interface SonioxToken {
   text: string;
-  start_ms: number;
-  end_ms: number;
-  confidence: number;
+  start_ms?: number;
+  end_ms?: number;
+  confidence?: number;
   is_final: boolean;
   speaker?: string;
 }

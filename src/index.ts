@@ -6,8 +6,16 @@ import WS from 'ws';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import { handleAppConnection } from './handlers/app-connection';
+import { initDb } from './db';
+import {
+  confirmSpeakerName,
+  listAllSpeakers,
+  listAnonymousSpeakers,
+} from './services/speaker-service';
 
 const PORT = parseInt(process.env.PORT ?? '8080', 10);
+
+initDb();
 
 if (!(globalThis as any).WebSocket) {
   (globalThis as any).WebSocket = WS;
@@ -32,6 +40,49 @@ const server = createServer((req, res) => {
   if (req.url === '/healthz') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'ok' }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/speakers') {
+    try {
+      const rows = listAllSpeakers();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, data: rows }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: String((err as Error).message ?? err) }));
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/speakers/anonymous') {
+    try {
+      const rows = listAnonymousSpeakers();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, data: rows }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: String((err as Error).message ?? err) }));
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && req.url && /^\/speakers\/[^/]+\/confirm$/.test(req.url)) {
+    const speakerId = req.url.split('/')[2];
+    const chunks: Buffer[] = [];
+    req.on('data', chunk => chunks.push(chunk));
+    req.on('end', () => {
+      try {
+        const bodyRaw = Buffer.concat(chunks).toString('utf8') || '{}';
+        const body = JSON.parse(bodyRaw) as { realName?: string };
+        const result = confirmSpeakerName(speakerId, body.realName || '');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, data: result }));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: String((err as Error).message ?? err) }));
+      }
+    });
     return;
   }
 
