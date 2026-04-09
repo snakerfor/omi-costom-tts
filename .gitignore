@@ -2,3 +2,18 @@ node_modules/
 dist/
 .env
 *.log
+
+# macOS
+.DS_Store
+
+# Deployment
+*.tar.gz
+
+# Test artifacts
+tests/audio-uploads/
+tests/test.m4a
+tests/test.opus
+tests/test.rawopus
+
+# Reference screenshots
+reference/
