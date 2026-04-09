@@ -25,12 +25,43 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   // Audio file writer - saves WAV with RIFF header
   const AUDIO_DIR = path.join(process.cwd(), 'audio-uploads');
   const sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const audioFilePath = path.join(AUDIO_DIR, sessionId + '.wav');
-  const wavWriter = new AudioFileWriter(audioFilePath, {
+  let audioFilePath = path.join(AUDIO_DIR, sessionId + '.wav');
+  let wavWriter = new AudioFileWriter(audioFilePath, {
     sampleRate: 16000,
     channels: 1,
     bitsPerSample: 16,
   });
+
+  // Periodic save timer - save every 10 minutes
+  const PERIODIC_SAVE_INTERVAL = 10 * 60 * 1000; // 10 minutes
+  let periodicSaveCount = 0;
+  const periodicSaveTimer = setInterval(() => {
+    if (audioQueue.length > 0 || wavWriter['buffer'].length > 0) {
+      periodicSaveCount++;
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const periodicFilePath = path.join(AUDIO_DIR, `${sessionId}_part${periodicSaveCount}_${timestamp}.wav`);
+      
+      // Create new writer for this segment
+      const partWriter = new AudioFileWriter(periodicFilePath, {
+        sampleRate: 16000,
+        channels: 1,
+        bitsPerSample: 16,
+      });
+      
+      // Copy current buffer to part writer
+      for (const buf of wavWriter['buffer']) {
+        partWriter.write(buf);
+      }
+      
+      partWriter.finish()
+        .then((filepath) => {
+          console.log(`[AudioFile] Periodic save (${Math.round(periodicSaveCount * PERIODIC_SAVE_INTERVAL / 60000)}min): ${filepath}`);
+        })
+        .catch((err) => {
+          console.error('[AudioFile] Periodic save failed:', err);
+        });
+    }
+  }, PERIODIC_SAVE_INTERVAL);
 
   // 2. Connect to Soniox
   try {
@@ -168,6 +199,10 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   // 6. Cleanup
   ws.on('close', () => {
     console.log('[APP] Connection closed');
+    // Clear periodic save timer
+    if (periodicSaveTimer) {
+      clearInterval(periodicSaveTimer);
+    }
     try {
       sonioxSession?.close();
     } catch {
