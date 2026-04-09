@@ -1,0 +1,104 @@
+// Load dotenv first before any other imports
+require('dotenv').config();
+
+import WS from 'ws';
+
+import { createServer } from 'http';
+import { WebSocketServer } from 'ws';
+import { handleAppConnection } from './handlers/app-connection';
+
+const PORT = parseInt(process.env.PORT ?? '8080', 10);
+
+if (!(globalThis as any).WebSocket) {
+  (globalThis as any).WebSocket = WS;
+}
+
+console.log('[Boot] globalThis.WebSocket =', typeof (globalThis as any).WebSocket);
+console.log('[Boot] marker = soniox-ws-fix');
+
+// Create HTTP server
+import * as fs from 'fs';
+import * as path from 'path';
+
+// Ensure audio uploads directory exists
+const AUDIO_DIR = path.join(process.cwd(), 'tests', 'audio-uploads');
+if (!fs.existsSync(AUDIO_DIR)) {
+  fs.mkdirSync(AUDIO_DIR, { recursive: true });
+}
+
+const server = createServer((req, res) => {
+  // Health check endpoint
+  if (req.url === '/healthz') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok' }));
+    return;
+  }
+
+  // Audio Streaming Webhook endpoint (from OMI app)
+  // URL: POST /api/audio?sample_rate=16000&uid=user_id
+  if (req.method === 'POST' && req.url && req.url.startsWith('/api/audio')) {
+    const urlObj = new URL(req.url, `http://${req.headers.host}`);
+    const sampleRate = urlObj.searchParams.get('sample_rate') || '16000';
+    const uid = urlObj.searchParams.get('uid') || 'anonymous';
+    const duration = urlObj.searchParams.get('duration') || 'unknown';
+    
+    console.log(`[Audio Webhook] Received audio chunk for uid: ${uid}, sample_rate: ${sampleRate}, duration: ${duration}`);
+    
+    const chunks: Buffer[] = [];
+    
+    req.on('data', (chunk) => {
+      chunks.push(chunk);
+    });
+    
+    req.on('end', () => {
+      const audioBuffer = Buffer.concat(chunks);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `audio_${uid}_${timestamp}_${sampleRate}hz.pcm`;
+      const filepath = path.join(AUDIO_DIR, filename);
+      
+      // Save the raw PCM audio bytes to a file
+      fs.writeFile(filepath, audioBuffer, (err) => {
+        if (err) {
+          console.error(`[Audio Webhook] Failed to save audio file: ${err.message}`);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Failed to save audio' }));
+        } else {
+          console.log(`[Audio Webhook] Saved ${audioBuffer.length} bytes to ${filename}`);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'success', bytes_received: audioBuffer.length, filename }));
+        }
+      });
+    });
+    
+    return;
+  }
+
+  res.writeHead(404);
+  res.end();
+});
+
+// Create WebSocket server
+const wss = new WebSocketServer({ server });
+
+wss.on('connection', (ws, req) => {
+  console.log('[Server] New connection from:', req.socket.remoteAddress);
+  handleAppConnection(ws, req);
+});
+
+wss.on('error', (err) => {
+  console.error('[Server] WebSocket server error:', err);
+});
+
+server.listen(PORT, () => {
+  console.log(`[Server] OMI Custom STT server running on port ${PORT}`);
+  console.log(`[Server] WebSocket endpoint: ws://localhost:${PORT}/stt`);
+  console.log(`[Server] Health check: http://localhost:${PORT}/healthz`);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('[Server] SIGTERM received, shutting down...');
+  wss.close();
+  server.close();
+  process.exit(0);
+});

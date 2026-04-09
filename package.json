@@ -1,0 +1,29 @@
+{
+  "name": "omi-custom-tts",
+  "version": "1.0.0",
+  "description": "OMI Custom STT Provider with Soniox",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "test": "ts-node tests/test-client-with-audio.ts",
+    "test:pcm": "ts-node tests/test-with-pcm.ts",
+    "test:opus": "ts-node tests/test-opus-client.ts",
+    "test:raw-opus": "ts-node tests/test-raw-opus.ts",
+    "generate:opus": "ffmpeg -f lavfi -i \"sine=frequency=440:duration=3\" -acodec libopus -ar 16000 -ac 1 tests/test.opus",
+    "generate:pcm": "ffmpeg -i tests/test.m4a -f s16le -ar 16000 -ac 1 tests/test.pcm"
+  },
+  "dependencies": {
+    "@soniox/node": "^1.1.2",
+    "dotenv": "^16.4.5",
+    "opusscript": "^0.1.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/ws": "^8.5.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
