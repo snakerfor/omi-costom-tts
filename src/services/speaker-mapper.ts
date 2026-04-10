@@ -85,7 +85,7 @@ function findBestMatch(embedding: number[], threshold: number): {
   return best;
 }
 
-async function buildClipPaths(conversationId: string, speakerLabel: string, rows: SegmentRow[]): Promise<string[]> {
+async function buildClipPaths(conversationId: string, speakerLabel: string, rows: SegmentRow[], prefix: string = ''): Promise<string[]> {
   const conv = db.prepare(`SELECT audio_file_path FROM conversations WHERE id = ?`).get(conversationId) as {
     audio_file_path?: string;
   } | undefined;
@@ -98,14 +98,14 @@ async function buildClipPaths(conversationId: string, speakerLabel: string, rows
 
   const candidates = [...rows]
     .map(r => ({ ...r, duration: Number(r.end_ms || 0) - Number(r.start_ms || 0), textLen: (r.text || '').length }))
-    .filter(r => r.duration >= 600 && r.textLen >= 2)
-    .sort((a, b) => (b.duration + b.textLen * 80) - (a.duration + a.textLen * 80))
-    .slice(0, 3);
+    .filter(r => r.duration >= 600)
+    .sort((a, b) => b.duration - a.duration)
+    .slice(0, 2);
 
   const out: string[] = [];
   for (let i = 0; i < candidates.length; i++) {
     const c = candidates[i];
-    const clipPath = path.join(clipsDir, `${conversationId}_${speakerLabel}_${i}.wav`);
+    const clipPath = path.join(clipsDir, `${conversationId}_${speakerLabel}_${prefix}${i}.wav`);
     try {
       await clipAudioSegment(sourceAudio, clipPath, Number(c.start_ms || 0), Number(c.end_ms || 0));
       out.push(clipPath);
@@ -115,6 +115,13 @@ async function buildClipPaths(conversationId: string, speakerLabel: string, rows
   }
 
   return out;
+}
+
+interface Block {
+  speaker_label: string;
+  segments: SegmentRow[];
+  start_ms: number;
+  end_ms: number;
 }
 
 export async function mapSpeakersForConversation(conversationId: string): Promise<void> {
@@ -127,102 +134,173 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
 
   if (!segments.length) return;
 
-  const grouped = new Map<string, SegmentRow[]>();
+  // 1. Group contiguous segments of the SAME speaker_label into Blocks
+  const blocks: Block[] = [];
+  let currentBlock: Block | null = null;
+
   for (const seg of segments) {
-    const key = seg.speaker_label ?? 'unknown';
-    const arr = grouped.get(key) || [];
-    arr.push(seg);
-    grouped.set(key, arr);
+    const label = seg.speaker_label ?? 'unknown';
+    // Break block if label changes, or gap > 5 seconds
+    if (currentBlock && currentBlock.speaker_label === label && (seg.start_ms - currentBlock.end_ms) < 5000) {
+      currentBlock.segments.push(seg);
+      currentBlock.end_ms = Math.max(currentBlock.end_ms, seg.end_ms);
+    } else {
+      currentBlock = {
+        speaker_label: label,
+        segments: [seg],
+        start_ms: seg.start_ms,
+        end_ms: seg.end_ms
+      };
+      blocks.push(currentBlock);
+    }
   }
 
   const threshold = Number(process.env.SPEAKER_MATCH_THRESHOLD || 0.82);
+  
+  interface MatchInfo {
+    speaker_id: string;
+    speaker_name: string | null;
+    identity_label: string | null;
+    status: string;
+    similarity: number | null;
+  }
+  const labelToSpeakerMap = new Map<string, MatchInfo>();
 
-  for (const [speakerLabel, rows] of grouped.entries()) {
-    const textSample = rows.map(r => r.text).join('').slice(0, 500);
-    const clipPaths = await buildClipPaths(conversationId, speakerLabel, rows);
-    const embedding = await buildEmbedding({
-      speakerLabel: speakerLabel === 'unknown' ? null : speakerLabel,
-      tokens: [],
-      textSample,
-      audioPaths: clipPaths,
-    });
+  // 2. Process each block
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    
+    const candidates = [...block.segments]
+      .map(r => ({ ...r, duration: r.end_ms - r.start_ms }))
+      .sort((a, b) => b.duration - a.duration);
+      
+    const rep = candidates[0]; // longest segment in this block
+    let matchInfo: MatchInfo | null = null;
+    let usedMethod = 'anonymous_match';
 
-    const match = findBestMatch(embedding, threshold);
-    const now = new Date().toISOString();
+    if (rep && rep.duration >= 1500) {
+      // Extract embedding for this block using its longest segment
+      const clipPaths = await buildClipPaths(conversationId, block.speaker_label, [rep], `blk${i}_`);
+      if (clipPaths.length > 0) {
+        const textSample = block.segments.map(s => s.text).join('').slice(0, 500);
+        const embedding = await buildEmbedding({
+          speakerLabel: block.speaker_label === 'unknown' ? null : block.speaker_label,
+          tokens: [],
+          textSample,
+          audioPaths: clipPaths,
+        });
 
-    let speakerId: string;
-    let speakerName: string | null = null;
-    let resolutionMethod = 'anonymous_match';
-    let confidence: number | null = null;
+        const match = findBestMatch(embedding, threshold);
+        const now = new Date().toISOString();
 
-    if (match) {
-      speakerId = match.speaker_id;
-      speakerName = match.speaker_name;
-      resolutionMethod = match.speaker_status === 'confirmed' ? 'embedding_match' : 'anonymous_match';
-      confidence = match.similarity;
+        if (match) {
+          matchInfo = {
+            speaker_id: match.speaker_id,
+            speaker_name: match.speaker_name,
+            identity_label: match.identity_label,
+            status: match.speaker_status,
+            similarity: match.similarity
+          };
+          usedMethod = match.speaker_status === 'confirmed' ? 'embedding_match' : 'anonymous_match';
+        } else {
+          // Create new speaker & embedding in DB
+          const newSpeakerId = genId('spk');
+          const embeddingId = genId('emb');
+          const displayLabel = getNextAnonymousDisplayLabel();
+
+          db.prepare(`
+            INSERT INTO speakers (
+              id, name, status, display_label, identity_label, identity_status, notes,
+              first_seen_at, last_seen_at, sample_text, sample_segment_id, sample_audio_path,
+              created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            newSpeakerId, null, 'anonymous', displayLabel, null, 'unconfirmed', null,
+            block.segments[0]?.absolute_start_time || now,
+            block.segments[block.segments.length - 1]?.absolute_end_time || now,
+            rep.text || null, rep.id || null, clipPaths[0] || null, now, now
+          );
+
+          db.prepare(`
+            INSERT INTO speaker_embeddings (
+              id, speaker_id, embedding_json, sample_rate, duration_ms,
+              source_audio_file_id, source_segment_id, source, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            embeddingId, newSpeakerId, JSON.stringify(embedding), 16000, rep.duration,
+            null, rep.id || null, 'auto_discovered', now
+          );
+
+          matchInfo = {
+            speaker_id: newSpeakerId,
+            speaker_name: null,
+            identity_label: null,
+            status: 'anonymous',
+            similarity: null
+          };
+          usedMethod = 'anonymous_match';
+        }
+      }
+    }
+
+    if (matchInfo) {
+      labelToSpeakerMap.set(block.speaker_label, matchInfo);
     } else {
-      speakerId = genId('spk');
-      const embeddingId = genId('emb');
-      const displayLabel = getNextAnonymousDisplayLabel();
+      // Fallback to recent mapping for this Soniox label if block is too short
+      const fallback = labelToSpeakerMap.get(block.speaker_label);
+      if (fallback) {
+        matchInfo = fallback;
+        usedMethod = 'short_segment_fallback';
+      } else {
+        // First time seeing this label and it's too short to extract? Unlikely but possible.
+        // We defer or just create a dummy anonymous without embedding.
+        // For simplicity, create dummy anonymous:
+        const now = new Date().toISOString();
+        const newSpeakerId = genId('spk');
+        const displayLabel = getNextAnonymousDisplayLabel();
+        db.prepare(`
+          INSERT INTO speakers (
+            id, name, status, display_label, identity_label, identity_status, notes,
+            first_seen_at, last_seen_at, sample_text, sample_segment_id, sample_audio_path,
+            created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          newSpeakerId, null, 'anonymous', displayLabel, null, 'unconfirmed', null,
+          block.segments[0]?.absolute_start_time || now,
+          block.segments[block.segments.length - 1]?.absolute_end_time || now,
+          block.segments[0]?.text || null, block.segments[0]?.id || null, null, now, now
+        );
+        matchInfo = {
+          speaker_id: newSpeakerId,
+          speaker_name: null,
+          identity_label: null,
+          status: 'anonymous',
+          similarity: null
+        };
+        usedMethod = 'dummy_fallback';
+        labelToSpeakerMap.set(block.speaker_label, matchInfo);
+      }
+    }
 
-      const representative = rows.find(r => (r.text || '').trim().length >= 4) || rows[0];
-
+    // 3. Update DB for all segments in this block
+    const now = new Date().toISOString();
+    for (const seg of block.segments) {
       db.prepare(`
-        INSERT INTO speakers (
-          id, name, status, display_label, identity_label, identity_status, notes,
-          first_seen_at, last_seen_at, sample_text, sample_segment_id, sample_audio_path,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        UPDATE conversation_segments
+        SET speaker_id = ?, speaker_name = ?, speaker_identity = ?, confidence = ?, resolution_method = ?, updated_at = ?
+        WHERE id = ?
       `).run(
-        speakerId,
-        null,
-        'anonymous',
-        displayLabel,
-        null,
-        'unconfirmed',
-        null,
-        rows[0]?.absolute_start_time || now,
-        rows[rows.length - 1]?.absolute_end_time || now,
-        representative?.text || null,
-        representative?.id || null,
-        clipPaths[0] || null,
+        matchInfo.speaker_id,
+        matchInfo.speaker_name,
+        matchInfo.identity_label,
+        matchInfo.similarity,
+        usedMethod,
         now,
-        now,
-      );
-
-      db.prepare(`
-        INSERT INTO speaker_embeddings (
-          id, speaker_id, embedding_json, sample_rate, duration_ms,
-          source_audio_file_id, source_segment_id, source, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        embeddingId,
-        speakerId,
-        JSON.stringify(embedding),
-        16000,
-        null,
-        null,
-        representative?.id || null,
-        'auto_discovered',
-        now,
+        seg.id
       );
     }
 
-    db.prepare(`
-      UPDATE conversation_segments
-      SET speaker_id = ?, speaker_name = ?, speaker_identity = ?, confidence = ?, resolution_method = ?, updated_at = ?
-      WHERE conversation_id = ? AND IFNULL(speaker_label, 'unknown') = ?
-    `).run(
-      speakerId,
-      speakerName,
-      match?.identity_label || null,
-      confidence,
-      resolutionMethod,
-      now,
-      conversationId,
-      speakerLabel,
-    );
-
+    // Update speaker last_seen_at
     db.prepare(`
       UPDATE speakers
       SET first_seen_at = COALESCE(first_seen_at, ?),
@@ -233,11 +311,11 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
           updated_at = ?
       WHERE id = ?
     `).run(
-      rows[0]?.absolute_start_time || now,
-      rows[rows.length - 1]?.absolute_end_time || now,
-      rows[rows.length - 1]?.absolute_end_time || now,
+      block.segments[0]?.absolute_start_time || now,
+      block.segments[block.segments.length - 1]?.absolute_end_time || now,
+      block.segments[block.segments.length - 1]?.absolute_end_time || now,
       now,
-      speakerId,
+      matchInfo.speaker_id
     );
   }
 }
