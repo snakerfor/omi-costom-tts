@@ -35,6 +35,7 @@ console.log('[Boot] marker = soniox-ws-fix');
 const AUDIO_DIR = path.join(process.cwd(), 'audio-uploads');
 const PUBLIC_DIR = path.join(process.cwd(), 'public');
 const ADMIN_DIR = path.join(PUBLIC_DIR, 'admin');
+const PREVIEW_DIR = path.join(PUBLIC_DIR, 'preview');
 const MEDIA_ROOTS: Record<string, string> = {
   audio: path.join(process.cwd(), 'audio-uploads'),
   clips: path.join(process.cwd(), 'data', 'clips'),
@@ -96,6 +97,21 @@ function serveAdminAsset(reqPath: string, res: ServerResponse): boolean {
   const relative = reqPath === '/admin' || reqPath === '/admin/' ? 'index.html' : reqPath.replace(/^\/admin\//, '');
   const target = path.resolve(ADMIN_DIR, relative);
   if (!isSafeChildPath(ADMIN_DIR, target) && target !== path.resolve(ADMIN_DIR, 'index.html')) {
+    sendJson(res, 403, { ok: false, error: 'Forbidden' });
+    return true;
+  }
+  if (!fs.existsSync(target)) {
+    sendJson(res, 404, { ok: false, error: 'Not found' });
+    return true;
+  }
+  serveFile(res, target);
+  return true;
+}
+
+function servePreviewAsset(reqPath: string, res: ServerResponse): boolean {
+  const relative = reqPath === '/preview' || reqPath === '/preview/' ? 'index.html' : reqPath.replace(/^\/preview\//, '');
+  const target = path.resolve(PREVIEW_DIR, relative);
+  if (!isSafeChildPath(PREVIEW_DIR, target) && target !== path.resolve(PREVIEW_DIR, 'index.html')) {
     sendJson(res, 403, { ok: false, error: 'Forbidden' });
     return true;
   }
@@ -256,6 +272,11 @@ const server = createServer((req, res) => {
 
     if (req.method === 'GET' && (urlObj.pathname === '/admin' || urlObj.pathname === '/admin/' || urlObj.pathname.startsWith('/admin/'))) {
       serveAdminAsset(urlObj.pathname, res);
+      return;
+    }
+
+    if (req.method === 'GET' && (urlObj.pathname === '/preview' || urlObj.pathname === '/preview/' || urlObj.pathname.startsWith('/preview/'))) {
+      servePreviewAsset(urlObj.pathname, res);
       return;
     }
 

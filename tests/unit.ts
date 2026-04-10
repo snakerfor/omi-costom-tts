@@ -7,6 +7,7 @@ import { SegmentBuilder } from '../src/utils/segment-builder';
 import { FinalResultRecorder } from '../src/services/final-result-recorder';
 import { finalizeConversation } from '../src/services/conversation-finalizer';
 import { AudioFileWriter } from '../src/services/audio-file-writer';
+import { assignLocalSpeakerClusters, findBestMatchFromRows } from '../src/services/speaker-mapper';
 
 async function testValidateConnection(): Promise<void> {
   process.env.ACCESS_TOKENS = 'token-a,token-b';
@@ -93,6 +94,117 @@ async function testAudioFileWriterStreams(tmpDir: string): Promise<void> {
   assert.equal(stat.size, 44 + 480, 'wav size should equal header plus PCM data');
 }
 
+function testSpeakerMatchRequiresThresholdAndMargin(): void {
+  const embedding = [1, 0];
+
+  const confidentRows = [
+    {
+      speaker_id: 'spk-1',
+      embedding_json: JSON.stringify([1, 0]),
+      speaker_name: 'A',
+      speaker_status: 'confirmed',
+      identity_label: '同事',
+      display_label: 'A',
+    },
+    {
+      speaker_id: 'spk-1',
+      embedding_json: JSON.stringify([0.9, 0.1]),
+      speaker_name: 'A',
+      speaker_status: 'confirmed',
+      identity_label: '同事',
+      display_label: 'A',
+    },
+    {
+      speaker_id: 'spk-2',
+      embedding_json: JSON.stringify([0, 1]),
+      speaker_name: 'B',
+      speaker_status: 'confirmed',
+      identity_label: '同事',
+      display_label: 'B',
+    },
+  ];
+
+  const confident = findBestMatchFromRows(embedding, confidentRows as any, 0.78, 0.06);
+  assert.equal(confident?.speaker_id, 'spk-1', 'clear winner should bind to the matching speaker');
+
+  const ambiguousRows = [
+    {
+      speaker_id: 'spk-1',
+      embedding_json: JSON.stringify([1, 0]),
+      speaker_name: 'A',
+      speaker_status: 'confirmed',
+      identity_label: '同事',
+      display_label: 'A',
+    },
+    {
+      speaker_id: 'spk-2',
+      embedding_json: JSON.stringify([0.998, 0.063]),
+      speaker_name: 'B',
+      speaker_status: 'confirmed',
+      identity_label: '同事',
+      display_label: 'B',
+    },
+  ];
+
+  const ambiguous = findBestMatchFromRows(embedding, ambiguousRows as any, 0.78, 0.06);
+  assert.equal(ambiguous, null, 'near-tied matches should defer instead of force-binding');
+
+  const weakRows = [
+    {
+      speaker_id: 'spk-1',
+      embedding_json: JSON.stringify([0.6, 0.8]),
+      speaker_name: 'A',
+      speaker_status: 'confirmed',
+      identity_label: '同事',
+      display_label: 'A',
+    },
+  ];
+
+  const weak = findBestMatchFromRows(embedding, weakRows as any, 0.95, 0.06);
+  assert.equal(weak, null, 'scores below threshold should not bind');
+}
+
+function testLocalClusterMergesDifferentSonioxLabels(): void {
+  const assignments = assignLocalSpeakerClusters(
+    [
+      { blockIndex: 0, speakerLabel: '1', startMs: 0, endMs: 4000, embedding: [1, 0] },
+      { blockIndex: 1, speakerLabel: '3', startMs: 4500, endMs: 7800, embedding: [0.99, 0.01] },
+      { blockIndex: 2, speakerLabel: '2', startMs: 8000, endMs: 11000, embedding: [0, 1] },
+    ],
+    0.72,
+    0.04,
+    12000,
+  );
+
+  const firstCluster = assignments.find(item => item.blockIndex === 0)?.clusterIndex;
+  const secondCluster = assignments.find(item => item.blockIndex === 1)?.clusterIndex;
+  const thirdCluster = assignments.find(item => item.blockIndex === 2)?.clusterIndex;
+
+  assert.equal(firstCluster, secondCluster, 'similar blocks with different Soniox labels should collapse into one local cluster');
+  assert.notEqual(firstCluster, thirdCluster, 'dissimilar speaker should remain in a separate cluster');
+}
+
+function testLocalClusterBridgesShortInterjection(): void {
+  const assignments = assignLocalSpeakerClusters(
+    [
+      { blockIndex: 0, speakerLabel: '1', startMs: 0, endMs: 3000, embedding: [1, 0] },
+      { blockIndex: 1, speakerLabel: '4', startMs: 3200, endMs: 3600, embedding: null },
+      { blockIndex: 2, speakerLabel: '3', startMs: 3800, endMs: 7000, embedding: [0.98, 0.02] },
+    ],
+    0.72,
+    0.04,
+    12000,
+  );
+
+  const first = assignments.find(item => item.blockIndex === 0);
+  const bridge = assignments.find(item => item.blockIndex === 1);
+  const third = assignments.find(item => item.blockIndex === 2);
+
+  assert.equal(first?.clusterIndex, third?.clusterIndex, 'same real speaker should still converge even if Soniox label changes');
+  assert.equal(bridge?.clusterIndex, first?.clusterIndex, 'short interjection between same-cluster blocks should inherit the surrounding local cluster');
+  assert.equal(bridge?.method, 'neighbor_bridge');
+}
+
 async function main(): Promise<void> {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'omi-custom-tts-'));
 
@@ -101,6 +213,9 @@ async function main(): Promise<void> {
     testSegmentBuilder();
     await testFinalizeConversationHandlesMissingAndDuplicates(tmpDir);
     await testAudioFileWriterStreams(tmpDir);
+    testSpeakerMatchRequiresThresholdAndMargin();
+    testLocalClusterMergesDifferentSonioxLabels();
+    testLocalClusterBridgesShortInterjection();
     console.log('unit tests passed');
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
