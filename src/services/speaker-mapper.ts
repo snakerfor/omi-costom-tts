@@ -81,7 +81,11 @@ function findBestMatch(embedding: number[], threshold: number): {
     }
   }
 
-  if (!best || best.similarity < threshold) return null;
+  if (!best) return null;
+  if (best.similarity < threshold) {
+    console.log(`[SpeakerMapper] Best match ${best.similarity.toFixed(3)} < threshold ${threshold}, creating new speaker.`);
+    return null;
+  }
   return best;
 }
 
@@ -155,7 +159,7 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
     }
   }
 
-  const threshold = Number(process.env.SPEAKER_MATCH_THRESHOLD || 0.82);
+  const threshold = Number(process.env.SPEAKER_MATCH_THRESHOLD || 0.65); // lowered threshold for short segments
   
   interface MatchInfo {
     speaker_id: string;
