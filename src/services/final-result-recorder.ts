@@ -35,7 +35,9 @@ export class FinalResultRecorder {
   async appendResult(result: SonioxResponse): Promise<void> {
     await this.init();
 
-    const tokens = Array.isArray(result.tokens) ? result.tokens : [];
+    const tokens = Array.isArray(result.tokens)
+      ? result.tokens.filter(t => !!t?.is_final && !!(t.text || '').trim())
+      : [];
     if (!tokens.length) {
       return;
     }
@@ -45,7 +47,7 @@ export class FinalResultRecorder {
       event: 'soniox_result',
       session_id: this.sessionId,
       result_index: this.resultIndex++,
-      is_final: tokens.every(t => !!t.is_final),
+      is_final: true,
       tokens,
     };
 

@@ -29,6 +29,62 @@ export interface FinalizeConversationResult {
   segments: FinalizedSegment[];
 }
 
+function hasMeaningfulContent(text: string): boolean {
+  return /[\p{Script=Han}\p{L}\p{N}]/u.test(text);
+}
+
+function isStandalonePunctuation(text: string): boolean {
+  return !hasMeaningfulContent(text);
+}
+
+function shouldMergeShortSegment(current: FinalizedSegment, next: FinalizedSegment): boolean {
+  const currentDuration = current.end_ms - current.start_ms;
+  const nextDuration = next.end_ms - next.start_ms;
+  const gap = next.start_ms - current.end_ms;
+
+  if (current.speaker_label !== next.speaker_label) {
+    return false;
+  }
+
+  if (gap > 1500) {
+    return false;
+  }
+
+  if (isStandalonePunctuation(current.text) || isStandalonePunctuation(next.text)) {
+    return true;
+  }
+
+  return current.text.length <= 2 || next.text.length <= 2 || currentDuration <= 800 || nextDuration <= 800;
+}
+
+function mergeSegmentPair(current: FinalizedSegment, next: FinalizedSegment): FinalizedSegment {
+  return {
+    ...current,
+    end_ms: next.end_ms,
+    absolute_end_time: next.absolute_end_time,
+    text: `${current.text}${next.text}`.trim(),
+  };
+}
+
+function compactSegments(segments: FinalizedSegment[]): FinalizedSegment[] {
+  const filtered = segments.filter(seg => hasMeaningfulContent(seg.text));
+  if (!filtered.length) {
+    return [];
+  }
+
+  const compacted: FinalizedSegment[] = [];
+  for (const seg of filtered) {
+    const prev = compacted.at(-1);
+    if (prev && shouldMergeShortSegment(prev, seg)) {
+      compacted[compacted.length - 1] = mergeSegmentPair(prev, seg);
+      continue;
+    }
+    compacted.push(seg);
+  }
+
+  return compacted;
+}
+
 function parseNdjson(content: string): RawTranscriptEvent[] {
   return content
     .split(/\r?\n/)
@@ -41,7 +97,7 @@ function normalizeFinalTokens(events: RawTranscriptEvent[]): SonioxToken[] {
   const seen = new Set<string>();
   const out: SonioxToken[] = [];
   for (const e of events) {
-    if (!e.is_final || !Array.isArray(e.tokens)) continue;
+    if (!Array.isArray(e.tokens)) continue;
     for (const t of e.tokens) {
       if (!t?.is_final) continue;
       const text = (t.text || '').trim();
@@ -146,7 +202,7 @@ function buildSegments(tokens: SonioxToken[], recordingStartedAt: string): Final
     });
   }
 
-  return segments;
+  return compactSegments(segments);
 }
 
 export async function finalizeConversation(options: FinalizeConversationOptions): Promise<FinalizeConversationResult> {

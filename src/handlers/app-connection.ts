@@ -26,6 +26,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   let sonioxSession: ReturnType<typeof createSonioxSession> | null = null;
   let audioQueue: Buffer[] = [];
   let sonioxConnected = false;
+  let sonioxAcceptingAudio = false;
   let pendingCloseStream = false;
   let committedEnd = 0; // Track last sent segment end to prevent overlap
   let wavFinalized = false; // Prevent double-finalize
@@ -192,6 +193,24 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     }
   }
 
+  function stopAcceptingAudio(): void {
+    sonioxConnected = false;
+    sonioxAcceptingAudio = false;
+  }
+
+  function sendAudioToSoniox(audioData: Buffer): void {
+    if (!sonioxSession || !sonioxConnected || !sonioxAcceptingAudio) {
+      return;
+    }
+
+    try {
+      sonioxSession.sendAudio(audioData);
+    } catch (err) {
+      stopAcceptingAudio();
+      console.warn('[Soniox] sendAudio skipped after session stopped:', String((err as Error)?.message ?? err));
+    }
+  }
+
   // 2. Connect to Soniox
   try {
     sonioxSession = createSonioxSession();
@@ -246,22 +265,25 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   });
 
   sonioxSession.on('error', (err: Error) => {
+    stopAcceptingAudio();
     console.error('[Soniox] Session error:', err);
     void finalizeOnce('soniox_error');
     ws.close(1011, 'STT error');
   });
 
   sonioxSession.on('disconnected', (reason?: string) => {
+    stopAcceptingAudio();
     console.log('[Soniox] Disconnected:', reason);
   });
 
   sonioxSession.on('connected', () => {
     console.log('[Soniox] Connected');
     sonioxConnected = true;
+    sonioxAcceptingAudio = true;
 
     // Process queued audio - direct PCM send
     for (const audioData of audioQueue) {
-      sonioxSession?.sendAudio(audioData);
+      sendAudioToSoniox(audioData);
     }
     audioQueue = [];
 
@@ -273,6 +295,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       if (seg) {
         ws.send(JSON.stringify({ segments: [seg] }));
       }
+      stopAcceptingAudio();
       sonioxSession?.finish();
     }
   });
@@ -293,10 +316,10 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       // Write to WAV file
       wavWriter.write(audioData);
 
-      if (sonioxConnected && sonioxSession) {
+      if (sonioxConnected && sonioxAcceptingAudio && sonioxSession) {
         // OMI APP sends PCM s16le directly - no decoding needed
-        sonioxSession.sendAudio(audioData);
-      } else {
+        sendAudioToSoniox(audioData);
+      } else if (!finalizeStarted) {
         // Queue while waiting for Soniox
         audioQueue.push(audioData);
       }
@@ -304,16 +327,17 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       // Text: JSON control message
       try {
         const msg = JSON.parse(data.toString()) as AppMessage;
-        if (msg.type === 'CloseStream') {
-          console.log('[APP] Received CloseStream');
-          if (sonioxConnected) {
-            const seg = builder.flushPending();
-            if (seg) {
-              ws.send(JSON.stringify({ segments: [seg] }));
-            }
-            sonioxSession?.finish();
-            void finalizeOnce('close_stream');
-          } else {
+          if (msg.type === 'CloseStream') {
+            console.log('[APP] Received CloseStream');
+            if (sonioxConnected) {
+              const seg = builder.flushPending();
+              if (seg) {
+                ws.send(JSON.stringify({ segments: [seg] }));
+              }
+              stopAcceptingAudio();
+              sonioxSession?.finish();
+              void finalizeOnce('close_stream');
+            } else {
             pendingCloseStream = true;
           }
           if (!sonioxConnected) {
@@ -329,6 +353,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   // 6. Cleanup
   ws.on('close', () => {
     console.log('[APP] Connection closed');
+    stopAcceptingAudio();
     try {
       sonioxSession?.close();
     } catch {
