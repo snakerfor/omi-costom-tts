@@ -4,6 +4,17 @@ const dbPath = process.env.DB_PATH ?? 'app.db';
 
 export const db: any = new Database(dbPath);
 
+function hasColumn(tableName: string, columnName: string): boolean {
+  const rows = db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name?: string }>;
+  return rows.some(row => row.name === columnName);
+}
+
+function addColumnIfMissing(tableName: string, columnName: string, definition: string): void {
+  if (!hasColumn(tableName, columnName)) {
+    db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  }
+}
+
 export function initDb(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS conversations (
@@ -46,6 +57,7 @@ export function initDb(): void {
       speaker_label TEXT,
       speaker_id TEXT,
       speaker_name TEXT,
+      speaker_identity TEXT,
       text TEXT NOT NULL,
       confidence REAL,
       resolution_method TEXT,
@@ -58,6 +70,11 @@ export function initDb(): void {
       name TEXT,
       status TEXT NOT NULL,
       display_label TEXT,
+      identity_label TEXT,
+      identity_status TEXT,
+      notes TEXT,
+      first_seen_at TEXT,
+      last_seen_at TEXT,
       sample_text TEXT,
       sample_segment_id TEXT,
       sample_audio_path TEXT,
@@ -76,5 +93,23 @@ export function initDb(): void {
       source TEXT,
       created_at TEXT NOT NULL
     );
+  `);
+
+  addColumnIfMissing('speakers', 'identity_label', 'TEXT');
+  addColumnIfMissing('speakers', 'identity_status', `TEXT NOT NULL DEFAULT 'unconfirmed'`);
+  addColumnIfMissing('speakers', 'notes', 'TEXT');
+  addColumnIfMissing('speakers', 'first_seen_at', 'TEXT');
+  addColumnIfMissing('speakers', 'last_seen_at', 'TEXT');
+  addColumnIfMissing('conversation_segments', 'speaker_identity', 'TEXT');
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_speakers_status ON speakers(status);
+    CREATE INDEX IF NOT EXISTS idx_speakers_name ON speakers(name);
+    CREATE INDEX IF NOT EXISTS idx_speakers_last_seen_at ON speakers(last_seen_at);
+    CREATE INDEX IF NOT EXISTS idx_conversations_created_at ON conversations(created_at);
+    CREATE INDEX IF NOT EXISTS idx_conversations_first_audio_frame_at ON conversations(first_audio_frame_at);
+    CREATE INDEX IF NOT EXISTS idx_conversation_segments_conversation_id ON conversation_segments(conversation_id);
+    CREATE INDEX IF NOT EXISTS idx_conversation_segments_speaker_id ON conversation_segments(speaker_id);
+    CREATE INDEX IF NOT EXISTS idx_conversation_segments_absolute_start_time ON conversation_segments(absolute_start_time);
   `);
 }

@@ -13,6 +13,8 @@ interface SegmentRow {
   id: string;
   start_ms: number;
   end_ms: number;
+  absolute_start_time: string | null;
+  absolute_end_time: string | null;
   speaker_label: string | null;
   text: string;
 }
@@ -22,6 +24,7 @@ interface EmbeddingRow {
   embedding_json: string;
   speaker_name: string | null;
   speaker_status: string;
+  identity_label: string | null;
   display_label: string | null;
 }
 
@@ -31,13 +34,20 @@ function getNextAnonymousDisplayLabel(): string {
   return `未命名发言人${next}`;
 }
 
-function findBestMatch(embedding: number[], threshold: number): { speaker_id: string; speaker_name: string | null; speaker_status: string; similarity: number } | null {
+function findBestMatch(embedding: number[], threshold: number): {
+  speaker_id: string;
+  speaker_name: string | null;
+  speaker_status: string;
+  identity_label: string | null;
+  similarity: number;
+} | null {
   const rows = db.prepare(`
     SELECT
       se.speaker_id,
       se.embedding_json,
       s.name AS speaker_name,
       s.status AS speaker_status,
+      s.identity_label,
       s.display_label
     FROM speaker_embeddings se
     JOIN speakers s ON s.id = se.speaker_id
@@ -45,7 +55,13 @@ function findBestMatch(embedding: number[], threshold: number): { speaker_id: st
 
   if (!rows.length) return null;
 
-  let best: { speaker_id: string; speaker_name: string | null; speaker_status: string; similarity: number } | null = null;
+  let best: {
+    speaker_id: string;
+    speaker_name: string | null;
+    speaker_status: string;
+    identity_label: string | null;
+    similarity: number;
+  } | null = null;
   for (const row of rows) {
     let known: number[] = [];
     try {
@@ -59,6 +75,7 @@ function findBestMatch(embedding: number[], threshold: number): { speaker_id: st
         speaker_id: row.speaker_id,
         speaker_name: row.speaker_name,
         speaker_status: row.speaker_status,
+        identity_label: row.identity_label,
         similarity: score,
       };
     }
@@ -102,7 +119,7 @@ async function buildClipPaths(conversationId: string, speakerLabel: string, rows
 
 export async function mapSpeakersForConversation(conversationId: string): Promise<void> {
   const segments = db.prepare(`
-    SELECT id, start_ms, end_ms, speaker_label, text
+    SELECT id, start_ms, end_ms, absolute_start_time, absolute_end_time, speaker_label, text
     FROM conversation_segments
     WHERE conversation_id = ?
     ORDER BY start_ms ASC
@@ -152,14 +169,20 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
 
       db.prepare(`
         INSERT INTO speakers (
-          id, name, status, display_label, sample_text, sample_segment_id, sample_audio_path,
+          id, name, status, display_label, identity_label, identity_status, notes,
+          first_seen_at, last_seen_at, sample_text, sample_segment_id, sample_audio_path,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         speakerId,
         null,
         'anonymous',
         displayLabel,
+        null,
+        'unconfirmed',
+        null,
+        rows[0]?.absolute_start_time || now,
+        rows[rows.length - 1]?.absolute_end_time || now,
         representative?.text || null,
         representative?.id || null,
         clipPaths[0] || null,
@@ -187,16 +210,34 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
 
     db.prepare(`
       UPDATE conversation_segments
-      SET speaker_id = ?, speaker_name = ?, confidence = ?, resolution_method = ?, updated_at = ?
+      SET speaker_id = ?, speaker_name = ?, speaker_identity = ?, confidence = ?, resolution_method = ?, updated_at = ?
       WHERE conversation_id = ? AND IFNULL(speaker_label, 'unknown') = ?
     `).run(
       speakerId,
       speakerName,
+      match?.identity_label || null,
       confidence,
       resolutionMethod,
       now,
       conversationId,
       speakerLabel,
+    );
+
+    db.prepare(`
+      UPDATE speakers
+      SET first_seen_at = COALESCE(first_seen_at, ?),
+          last_seen_at = CASE
+            WHEN last_seen_at IS NULL OR last_seen_at < ? THEN ?
+            ELSE last_seen_at
+          END,
+          updated_at = ?
+      WHERE id = ?
+    `).run(
+      rows[0]?.absolute_start_time || now,
+      rows[rows.length - 1]?.absolute_end_time || now,
+      rows[rows.length - 1]?.absolute_end_time || now,
+      now,
+      speakerId,
     );
   }
 }

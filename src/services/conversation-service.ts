@@ -1,0 +1,312 @@
+import { db } from '../db';
+import { PaginatedResult } from './speaker-service';
+
+export interface ConversationListFilters {
+  speakerName?: string;
+  identityLabel?: string;
+  keyword?: string;
+  startTime?: string;
+  endTime?: string;
+  status?: string;
+  hasUnconfirmedSpeakers?: 'all' | 'true' | 'false';
+  page?: number;
+  pageSize?: number;
+}
+
+export interface ConversationListRow {
+  id: string;
+  session_id: string;
+  uid: string | null;
+  status: string;
+  started_at: string | null;
+  ended_at: string | null;
+  audio_file_path: string | null;
+  raw_result_path: string | null;
+  created_at: string;
+  updated_at: string;
+  segment_count: number;
+  speaker_count: number;
+  confirmed_speaker_count: number;
+  unconfirmed_speaker_count: number;
+  summary_text: string;
+}
+
+export interface ConversationSpeakerSummary {
+  speaker_id: string | null;
+  speaker_name: string | null;
+  display_name: string;
+  identity_label: string | null;
+  segment_count: number;
+  total_duration_ms: number;
+  is_confirmed: number;
+}
+
+export interface ConversationSegmentRow {
+  id: string;
+  start_ms: number;
+  end_ms: number;
+  absolute_start_time: string | null;
+  absolute_end_time: string | null;
+  speaker_label: string | null;
+  speaker_id: string | null;
+  speaker_name: string | null;
+  speaker_identity: string | null;
+  display_name: string;
+  text: string;
+  confidence: number | null;
+  resolution_method: string | null;
+}
+
+export interface ConversationDetail {
+  conversation: ConversationListRow;
+  speakers: ConversationSpeakerSummary[];
+  segments: ConversationSegmentRow[];
+}
+
+function clampPositiveInt(value: number | undefined, fallback: number, max: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(1, Math.min(max, Math.floor(value as number)));
+}
+
+function buildConversationFilters(filters: ConversationListFilters): { whereClause: string; params: unknown[] } {
+  const where: string[] = [];
+  const params: unknown[] = [];
+
+  if (filters.speakerName) {
+    const q = `%${filters.speakerName.trim()}%`;
+    where.push(`EXISTS (
+      SELECT 1
+      FROM conversation_segments cs2
+      LEFT JOIN speakers s2 ON s2.id = cs2.speaker_id
+      WHERE cs2.conversation_id = c.id
+        AND (
+          COALESCE(cs2.speaker_name, '') LIKE ?
+          OR COALESCE(s2.name, '') LIKE ?
+          OR COALESCE(s2.display_label, '') LIKE ?
+          OR COALESCE(cs2.speaker_label, '') LIKE ?
+        )
+    )`);
+    params.push(q, q, q, q);
+  }
+
+  if (filters.identityLabel) {
+    const q = `%${filters.identityLabel.trim()}%`;
+    where.push(`EXISTS (
+      SELECT 1
+      FROM conversation_segments cs2
+      LEFT JOIN speakers s2 ON s2.id = cs2.speaker_id
+      WHERE cs2.conversation_id = c.id
+        AND (
+          COALESCE(cs2.speaker_identity, '') LIKE ?
+          OR COALESCE(s2.identity_label, '') LIKE ?
+        )
+    )`);
+    params.push(q, q);
+  }
+
+  if (filters.keyword) {
+    const q = `%${filters.keyword.trim()}%`;
+    where.push(`EXISTS (
+      SELECT 1 FROM conversation_segments cs2
+      WHERE cs2.conversation_id = c.id
+        AND COALESCE(cs2.text, '') LIKE ?
+    )`);
+    params.push(q);
+  }
+
+  if (filters.startTime) {
+    where.push(`COALESCE(c.first_audio_frame_at, c.created_at) >= ?`);
+    params.push(filters.startTime);
+  }
+
+  if (filters.endTime) {
+    where.push(`COALESCE(c.ended_at, c.updated_at, c.created_at) <= ?`);
+    params.push(filters.endTime);
+  }
+
+  if (filters.status) {
+    where.push(`c.status = ?`);
+    params.push(filters.status);
+  }
+
+  if (filters.hasUnconfirmedSpeakers === 'true') {
+    where.push(`EXISTS (
+      SELECT 1
+      FROM conversation_segments cs2
+      LEFT JOIN speakers s2 ON s2.id = cs2.speaker_id
+      WHERE cs2.conversation_id = c.id
+        AND (
+          s2.id IS NULL
+          OR s2.name IS NULL OR TRIM(s2.name) = ''
+          OR s2.identity_label IS NULL OR TRIM(s2.identity_label) = ''
+        )
+    )`);
+  }
+
+  if (filters.hasUnconfirmedSpeakers === 'false') {
+    where.push(`NOT EXISTS (
+      SELECT 1
+      FROM conversation_segments cs2
+      LEFT JOIN speakers s2 ON s2.id = cs2.speaker_id
+      WHERE cs2.conversation_id = c.id
+        AND (
+          s2.id IS NULL
+          OR s2.name IS NULL OR TRIM(s2.name) = ''
+          OR s2.identity_label IS NULL OR TRIM(s2.identity_label) = ''
+        )
+    )`);
+  }
+
+  return {
+    whereClause: where.length ? `WHERE ${where.join(' AND ')}` : '',
+    params,
+  };
+}
+
+function countConversations(filters: ConversationListFilters): number {
+  const { whereClause, params } = buildConversationFilters(filters);
+  const row = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM conversations c
+    ${whereClause}
+  `).get(...params) as { total?: number };
+  return Number(row?.total || 0);
+}
+
+export function listConversations(filters: ConversationListFilters): PaginatedResult<ConversationListRow> {
+  const { whereClause, params } = buildConversationFilters(filters);
+  const pageSize = clampPositiveInt(filters.pageSize, 50, 200);
+  const page = clampPositiveInt(filters.page, 1, 100000);
+  const offset = (page - 1) * pageSize;
+  const total = countConversations(filters);
+  const totalPages = total > 0 ? Math.ceil(total / pageSize) : 1;
+
+  return {
+    data: db.prepare(`
+    SELECT
+      c.id,
+      c.session_id,
+      c.uid,
+      c.status,
+      COALESCE(c.first_audio_frame_at, c.created_at) AS started_at,
+      c.ended_at,
+      c.audio_file_path,
+      c.raw_result_path,
+      c.created_at,
+      c.updated_at,
+      COUNT(cs.id) AS segment_count,
+      COUNT(DISTINCT COALESCE(cs.speaker_id, cs.speaker_label, 'unknown')) AS speaker_count,
+      COUNT(DISTINCT CASE
+        WHEN s.name IS NOT NULL AND TRIM(s.name) != '' AND s.identity_label IS NOT NULL AND TRIM(s.identity_label) != ''
+        THEN COALESCE(cs.speaker_id, cs.speaker_label, 'unknown')
+        ELSE NULL
+      END) AS confirmed_speaker_count,
+      COUNT(DISTINCT CASE
+        WHEN s.id IS NULL OR s.name IS NULL OR TRIM(s.name) = '' OR s.identity_label IS NULL OR TRIM(s.identity_label) = ''
+        THEN COALESCE(cs.speaker_id, cs.speaker_label, 'unknown')
+        ELSE NULL
+      END) AS unconfirmed_speaker_count,
+      COALESCE(GROUP_CONCAT(CASE WHEN cs.text IS NOT NULL AND TRIM(cs.text) != '' THEN cs.text END, ' '), '') AS summary_text
+    FROM conversations c
+    LEFT JOIN conversation_segments cs ON cs.conversation_id = c.id
+    LEFT JOIN speakers s ON s.id = cs.speaker_id
+    ${whereClause}
+    GROUP BY c.id, c.session_id, c.uid, c.status, c.first_audio_frame_at, c.ended_at, c.audio_file_path, c.raw_result_path, c.created_at, c.updated_at
+    ORDER BY COALESCE(c.first_audio_frame_at, c.created_at) DESC
+    LIMIT ? OFFSET ?
+  `).all(...params, pageSize, offset).map((row: any) => ({
+    ...row,
+    summary_text: String(row.summary_text || '').slice(0, 240),
+  })) as ConversationListRow[],
+    page,
+    pageSize,
+    total,
+    totalPages,
+  };
+}
+
+export function getConversationDetail(conversationId: string): ConversationDetail {
+  const conversation = db.prepare(`
+    SELECT
+      c.id,
+      c.session_id,
+      c.uid,
+      c.status,
+      COALESCE(c.first_audio_frame_at, c.created_at) AS started_at,
+      c.ended_at,
+      c.audio_file_path,
+      c.raw_result_path,
+      c.created_at,
+      c.updated_at,
+      COUNT(cs.id) AS segment_count,
+      COUNT(DISTINCT COALESCE(cs.speaker_id, cs.speaker_label, 'unknown')) AS speaker_count,
+      COUNT(DISTINCT CASE
+        WHEN s.name IS NOT NULL AND TRIM(s.name) != '' AND s.identity_label IS NOT NULL AND TRIM(s.identity_label) != ''
+        THEN COALESCE(cs.speaker_id, cs.speaker_label, 'unknown')
+        ELSE NULL
+      END) AS confirmed_speaker_count,
+      COUNT(DISTINCT CASE
+        WHEN s.id IS NULL OR s.name IS NULL OR TRIM(s.name) = '' OR s.identity_label IS NULL OR TRIM(s.identity_label) = ''
+        THEN COALESCE(cs.speaker_id, cs.speaker_label, 'unknown')
+        ELSE NULL
+      END) AS unconfirmed_speaker_count,
+      COALESCE(GROUP_CONCAT(CASE WHEN cs.text IS NOT NULL AND TRIM(cs.text) != '' THEN cs.text END, ' '), '') AS summary_text
+    FROM conversations c
+    LEFT JOIN conversation_segments cs ON cs.conversation_id = c.id
+    LEFT JOIN speakers s ON s.id = cs.speaker_id
+    WHERE c.id = ?
+    GROUP BY c.id, c.session_id, c.uid, c.status, c.first_audio_frame_at, c.ended_at, c.audio_file_path, c.raw_result_path, c.created_at, c.updated_at
+  `).get(conversationId) as ConversationListRow | undefined;
+
+  if (!conversation) {
+    throw new Error(`conversation not found: ${conversationId}`);
+  }
+
+  conversation.summary_text = String(conversation.summary_text || '').slice(0, 500);
+
+  const speakers = db.prepare(`
+    SELECT
+      cs.speaker_id,
+      s.name AS speaker_name,
+      COALESCE(s.name, s.display_label, cs.speaker_name, cs.speaker_label, '未知发言人') AS display_name,
+      COALESCE(s.identity_label, cs.speaker_identity) AS identity_label,
+      COUNT(cs.id) AS segment_count,
+      SUM(COALESCE(cs.end_ms, 0) - COALESCE(cs.start_ms, 0)) AS total_duration_ms,
+      CASE
+        WHEN s.name IS NOT NULL AND TRIM(s.name) != '' AND s.identity_label IS NOT NULL AND TRIM(s.identity_label) != '' THEN 1
+        ELSE 0
+      END AS is_confirmed
+    FROM conversation_segments cs
+    LEFT JOIN speakers s ON s.id = cs.speaker_id
+    WHERE cs.conversation_id = ?
+    GROUP BY cs.speaker_id, s.name, s.display_label, s.identity_label, cs.speaker_name, cs.speaker_label, cs.speaker_identity
+    ORDER BY total_duration_ms DESC, segment_count DESC
+  `).all(conversationId) as ConversationSpeakerSummary[];
+
+  const segments = db.prepare(`
+    SELECT
+      cs.id,
+      cs.start_ms,
+      cs.end_ms,
+      cs.absolute_start_time,
+      cs.absolute_end_time,
+      cs.speaker_label,
+      cs.speaker_id,
+      cs.speaker_name,
+      COALESCE(s.identity_label, cs.speaker_identity) AS speaker_identity,
+      COALESCE(s.name, s.display_label, cs.speaker_name, cs.speaker_label, '未知发言人') AS display_name,
+      cs.text,
+      cs.confidence,
+      cs.resolution_method
+    FROM conversation_segments cs
+    LEFT JOIN speakers s ON s.id = cs.speaker_id
+    WHERE cs.conversation_id = ?
+    ORDER BY cs.start_ms ASC, cs.created_at ASC
+  `).all(conversationId) as ConversationSegmentRow[];
+
+  return {
+    conversation,
+    speakers,
+    segments,
+  };
+}
