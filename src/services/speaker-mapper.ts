@@ -159,7 +159,7 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
     }
   }
 
-  const threshold = Number(process.env.SPEAKER_MATCH_THRESHOLD || 0.65); // lowered threshold for short segments
+  const threshold = Number(process.env.SPEAKER_MATCH_THRESHOLD || 0.45); // lowered threshold for short segments
   
   interface MatchInfo {
     speaker_id: string;
