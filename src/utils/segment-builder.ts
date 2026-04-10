@@ -12,64 +12,23 @@ export class SegmentBuilder {
     this.timeOffsetMs = ms;
   }
 
-  /**
-   * Push a token and return a segment if ready.
-   * - Non-final: Soniox returns cumulative tokens, REPLACE buffer (not append)
-   * - Final tokens: flush buffer and return final segment
-   */
-  push(token: SonioxToken): Segment | null {
-    if (!token.is_final) {
-      // Non-final: Soniox sends ALL tokens seen so far, replace buffer entirely
-      // The token parameter is one of the cumulative tokens, but we rebuild from accumulated state
-      // Actually, for non-final we should rebuild from current buffer state
-      this.lastPartialSegment = this.flush();
-      return null;
-    }
+  setPartial(tokens: SonioxToken[]): void {
+    this.buffer = [...tokens];
+    this.lastPartialSegment = this.buildSegment(this.buffer);
+  }
 
-    // Final token: flush and emit
-    const prev = this.buffer.at(-1);
-    const shouldFlush =
-      this.buffer.length > 0 &&
-      (token.speaker !== prev?.speaker ||
-        (Number(token.start_ms ?? 0) - Number(prev?.end_ms ?? 0)) > SILENCE_GAP_MS ||
-        (Number(token.end_ms ?? 0) - Number(this.buffer[0]?.start_ms ?? 0)) > MAX_DURATION_MS);
-
-    if (shouldFlush) {
-      const seg = this.flush();
-      this.buffer = [token];
-      this.lastPartialSegment = null;
-      return seg;
-    }
-
-    this.buffer.push(token);
-    const seg = this.flush();
+  consumeFinal(tokens: SonioxToken[]): Segment | null {
+    const seg = this.buildSegment(tokens);
     this.buffer = [];
     this.lastPartialSegment = null;
     return seg;
   }
 
-  /**
-   * Add token to buffer (called externally when processing Soniox results)
-   * For non-final: REPLACE buffer since Soniox sends cumulative tokens
-   * For final: APPEND to buffer
-   */
-  addToken(token: SonioxToken): void {
-    if (!token.is_final) {
-      // Non-final: Soniox cumulative tokens - reset buffer and add this token
-      // But since we get cumulative tokens in result.tokens, we should clear and rebuild
-      this.buffer = [token];
-    } else {
-      // Final: append
-      this.buffer.push(token);
-    }
-  }
-
-  /**
-   * Set buffer directly (for non-final cumulative tokens)
-   */
-  setBuffer(tokens: SonioxToken[]): void {
-    this.buffer = [...tokens];
-    this.lastPartialSegment = this.flush();
+  flushPending(): Segment | null {
+    const seg = this.buildSegment(this.buffer);
+    this.buffer = [];
+    this.lastPartialSegment = null;
+    return seg;
   }
 
   /**
@@ -79,25 +38,25 @@ export class SegmentBuilder {
     return this.lastPartialSegment;
   }
 
-  flush(): Segment | null {
-    if (this.buffer.length === 0) return null;
+  private buildSegment(tokens: SonioxToken[]): Segment | null {
+    if (tokens.length === 0) return null;
 
-    const text = this.buffer.map(t => t.text).join('').trim();
+    const text = tokens.map(t => t.text).join('').trim();
     if (!text) {
       return null;
     }
 
-    // Calculate time with protection against start > end
-    const startMs = this.buffer[0]?.start_ms ?? 0;
-    const endMs = this.buffer.at(-1)?.end_ms ?? startMs;
+    const startMs = tokens[0]?.start_ms ?? 0;
+    const endMs = tokens.at(-1)?.end_ms ?? startMs;
     const safeStart = Math.min(startMs, endMs) + this.timeOffsetMs;
     const safeEnd = Math.max(startMs, endMs) + this.timeOffsetMs;
+    const speaker = tokens[0]?.speaker;
 
     const seg: Segment = {
       text,
       start: safeStart / 1000,
       end: safeEnd / 1000,
-      speaker: `SPEAKER_${String(this.buffer[0].speaker ?? '0').padStart(2, '0')}`,
+      speaker: speaker ? `SPEAKER_${String(speaker).padStart(2, '0')}` : undefined,
     };
 
     return seg;

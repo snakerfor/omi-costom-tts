@@ -9,6 +9,13 @@ function genId(prefix: string): string {
 
 async function main() {
   initDb();
+  db.exec(`
+    DELETE FROM conversation_segments;
+    DELETE FROM audio_files;
+    DELETE FROM speaker_embeddings;
+    DELETE FROM speakers;
+    DELETE FROM conversations;
+  `);
 
   const conversationId = genId('conv');
   const audioFileId = genId('aud');

@@ -41,6 +41,13 @@ async function seedConversation(audioPath: string, speakerLabel: string, text: s
 
 async function main() {
   initDb();
+  db.exec(`
+    DELETE FROM conversation_segments;
+    DELETE FROM audio_files;
+    DELETE FROM speaker_embeddings;
+    DELETE FROM speakers;
+    DELETE FROM conversations;
+  `);
 
   const baseAudioPath = path.join(process.cwd(), 'tests', 'test.opus');
   const tmpDir = path.join(process.cwd(), 'tests', '.tmp');

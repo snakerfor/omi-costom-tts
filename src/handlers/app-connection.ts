@@ -47,8 +47,9 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     channels: 1,
     bitsPerSample: 16,
   });
+  const recorderReady = recorder.init();
 
-  void recorder.init().catch(err => {
+  void recorderReady.catch(err => {
     console.error('[Recorder] init failed:', err);
   });
 
@@ -88,6 +89,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     if (finalizeStarted) return;
     finalizeStarted = true;
 
+    await recorderReady.catch(() => undefined);
     await ensureWavFinalized('[AudioFile] Saved WAV:');
 
     try {
@@ -226,9 +228,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     const isFinal = newTokens[0].is_final;
 
     if (isFinal) {
-      // Final: build segment from filtered tokens
-      builder.setBuffer(newTokens);
-      const seg = builder.flush();
+      const seg = builder.consumeFinal(newTokens);
 
       if (seg) {
         console.log('[Soniox] Final:', JSON.stringify(seg));
@@ -237,7 +237,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       }
     } else {
       // Partial: only log, don't send to APP
-      builder.setBuffer(newTokens);
+      builder.setPartial(newTokens);
       const partial = builder.getLastPartial();
       if (partial) {
         console.log('[Soniox] Partial:', JSON.stringify(partial));
@@ -269,7 +269,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     if (pendingCloseStream) {
       console.log('[APP] Processing pending CloseStream after Soniox connected');
       pendingCloseStream = false;
-      const seg = builder.flush();
+      const seg = builder.flushPending();
       if (seg) {
         ws.send(JSON.stringify({ segments: [seg] }));
       }
@@ -307,7 +307,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
         if (msg.type === 'CloseStream') {
           console.log('[APP] Received CloseStream');
           if (sonioxConnected) {
-            const seg = builder.flush();
+            const seg = builder.flushPending();
             if (seg) {
               ws.send(JSON.stringify({ segments: [seg] }));
             }

@@ -6,6 +6,13 @@ function getValidTokens(): Set<string> {
   );
 }
 
+function maskToken(token: string): string {
+  if (token.length <= 6) {
+    return `${token.slice(0, 2)}***`;
+  }
+  return `${token.slice(0, 3)}***${token.slice(-2)}`;
+}
+
 export function validateConnection(req: IncomingMessage): boolean {
   const url = new URL(req.url ?? '', 'ws://localhost');
   const token = url.searchParams.get('api_key');
@@ -17,7 +24,7 @@ export function validateConnection(req: IncomingMessage): boolean {
 
   const validTokens = getValidTokens();
   if (!validTokens.has(token)) {
-    console.log('[Auth] Invalid token:', token, 'Valid tokens:', Array.from(validTokens));
+    console.log('[Auth] Invalid token:', maskToken(token), 'Configured token count:', validTokens.size);
     return false;
   }
 

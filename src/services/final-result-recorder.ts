@@ -13,6 +13,7 @@ export interface RawTranscriptEvent {
 
 export class FinalResultRecorder {
   private resultIndex = 0;
+  private initPromise: Promise<void> | null = null;
 
   constructor(private readonly sessionId: string, private readonly rawDir: string) {}
 
@@ -21,11 +22,19 @@ export class FinalResultRecorder {
   }
 
   async init(): Promise<void> {
-    await fs.mkdir(this.rawDir, { recursive: true });
-    await fs.appendFile(this.filePath, '', 'utf8');
+    if (!this.initPromise) {
+      this.initPromise = (async () => {
+        await fs.mkdir(this.rawDir, { recursive: true });
+        await fs.appendFile(this.filePath, '', 'utf8');
+      })();
+    }
+
+    await this.initPromise;
   }
 
   async appendResult(result: SonioxResponse): Promise<void> {
+    await this.init();
+
     const tokens = Array.isArray(result.tokens) ? result.tokens : [];
     if (!tokens.length) {
       return;

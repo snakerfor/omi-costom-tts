@@ -27,7 +27,7 @@ console.log('[Boot] marker = soniox-ws-fix');
 // Create HTTP server
 import * as fs from 'fs';
 import * as path from 'path';
-import { pcmToWavFile } from './services/audio-file-writer';
+import { AudioFileWriter } from './services/audio-file-writer';
 
 // Ensure audio uploads directory exists
 const AUDIO_DIR = path.join(process.cwd(), 'audio-uploads');
@@ -96,35 +96,37 @@ const server = createServer((req, res) => {
     
     console.log(`[Audio Webhook] Received audio chunk for uid: ${uid}, sample_rate: ${sampleRate}, duration: ${duration}`);
     
-    const chunks: Buffer[] = [];
-    
-    req.on('data', (chunk) => {
-      chunks.push(chunk);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `audio_${uid}_${timestamp}.wav`;
+    const filepath = path.join(AUDIO_DIR, filename);
+    const wavWriter = new AudioFileWriter(filepath, {
+      sampleRate: parseInt(sampleRate, 10),
+      channels: 1,
+      bitsPerSample: 16,
     });
-    
-    req.on('end', async () => {
-      const audioBuffer = Buffer.concat(chunks);
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filename = `audio_${uid}_${timestamp}.wav`;
-      const filepath = path.join(AUDIO_DIR, filename);
+    let bytesReceived = 0;
 
-      // Convert PCM to WAV and save
+    req.on('data', (chunk) => {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      bytesReceived += buffer.length;
+      wavWriter.write(buffer);
+    });
+
+    req.on('end', async () => {
       try {
-        await pcmToWavFile(
-          audioBuffer,
-          filepath,
-          parseInt(sampleRate, 10),
-          1,  // mono
-          16  // 16-bit
-        );
-        console.log(`[Audio Webhook] Saved WAV ${audioBuffer.length} bytes -> ${filename}`);
+        await wavWriter.finish();
+        console.log(`[Audio Webhook] Saved WAV ${bytesReceived} bytes -> ${filename}`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'success', bytes_received: audioBuffer.length, filename }));
+        res.end(JSON.stringify({ status: 'success', bytes_received: bytesReceived, filename }));
       } catch (err) {
         console.error(`[Audio Webhook] Failed to save audio file:`, err);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Failed to save audio' }));
       }
+    });
+
+    req.on('error', (err) => {
+      console.error('[Audio Webhook] Request stream error:', err);
     });
     
     return;

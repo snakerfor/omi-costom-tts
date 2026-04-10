@@ -38,6 +38,7 @@ function parseNdjson(content: string): RawTranscriptEvent[] {
 }
 
 function normalizeFinalTokens(events: RawTranscriptEvent[]): SonioxToken[] {
+  const seen = new Set<string>();
   const out: SonioxToken[] = [];
   for (const e of events) {
     if (!e.is_final || !Array.isArray(e.tokens)) continue;
@@ -45,12 +46,23 @@ function normalizeFinalTokens(events: RawTranscriptEvent[]): SonioxToken[] {
       if (!t?.is_final) continue;
       const text = (t.text || '').trim();
       if (!text) continue;
-      out.push({
+      const normalizedToken: SonioxToken = {
         ...t,
         text,
         start_ms: Number(t.start_ms || 0),
         end_ms: Number(t.end_ms || 0),
-      });
+      };
+      const key = [
+        normalizedToken.start_ms,
+        normalizedToken.end_ms,
+        normalizedToken.speaker ?? '',
+        normalizedToken.text,
+      ].join('|');
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      out.push(normalizedToken);
     }
   }
 
@@ -138,8 +150,17 @@ function buildSegments(tokens: SonioxToken[], recordingStartedAt: string): Final
 }
 
 export async function finalizeConversation(options: FinalizeConversationOptions): Promise<FinalizeConversationResult> {
-  const raw = await fs.readFile(options.rawTranscriptPath, 'utf8');
-  const events = parseNdjson(raw);
+  let raw = '';
+  try {
+    raw = await fs.readFile(options.rawTranscriptPath, 'utf8');
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT') {
+      throw err;
+    }
+  }
+
+  const events = raw ? parseNdjson(raw) : [];
   const finalTokens = normalizeFinalTokens(events);
   const segments = buildSegments(finalTokens, options.recordingStartedAt);
 

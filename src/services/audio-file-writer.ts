@@ -14,8 +14,10 @@ export class AudioFileWriter {
   private sampleRate: number;
   private channels: number;
   private bitsPerSample: number;
-  private buffer: Buffer[] = [];
   private filePath: string;
+  private fileDescriptor: number | null = null;
+  private dataSize = 0;
+  private finalized = false;
 
   constructor(filePath: string, options: WavWriterOptions) {
     this.filePath = filePath;
@@ -24,28 +26,51 @@ export class AudioFileWriter {
     this.bitsPerSample = options.bitsPerSample;
   }
 
+  private ensureOpen(): void {
+    if (this.fileDescriptor !== null) {
+      return;
+    }
+
+    const dir = path.dirname(this.filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    this.fileDescriptor = fs.openSync(this.filePath, 'w');
+    fs.writeSync(this.fileDescriptor, Buffer.alloc(44));
+  }
+
   /**
    * Write PCM data to the file
    */
   write(data: Buffer): void {
-    this.buffer.push(data);
+    if (this.finalized) {
+      throw new Error('cannot write after WAV file has been finalized');
+    }
+
+    if (!data.length) {
+      return;
+    }
+
+    this.ensureOpen();
+    fs.writeSync(this.fileDescriptor!, data);
+    this.dataSize += data.length;
   }
 
   /**
    * Finalize and write the WAV file with proper header
    */
   async finish(): Promise<string> {
-    const pcmData = Buffer.concat(this.buffer);
-    const wavBuffer = this.createWavBuffer(pcmData);
-
-    // Ensure directory exists
-    const dir = path.dirname(this.filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    if (this.finalized) {
+      return this.filePath;
     }
 
-    // Write the WAV file
-    fs.writeFileSync(this.filePath, wavBuffer);
+    this.ensureOpen();
+    const header = this.createHeaderBuffer(this.dataSize);
+    fs.writeSync(this.fileDescriptor!, header, 0, header.length, 0);
+    fs.closeSync(this.fileDescriptor!);
+    this.fileDescriptor = null;
+    this.finalized = true;
 
     return this.filePath;
   }
@@ -53,10 +78,9 @@ export class AudioFileWriter {
   /**
    * Create WAV buffer from PCM data
    */
-  private createWavBuffer(pcmData: Buffer): Buffer {
+  private createHeaderBuffer(dataSize: number): Buffer {
     const byteRate = this.sampleRate * this.channels * this.bitsPerSample / 8;
     const blockAlign = this.channels * this.bitsPerSample / 8;
-    const dataSize = pcmData.length;
     const fileSize = 36 + dataSize;
 
     const header = Buffer.alloc(44);
@@ -80,7 +104,7 @@ export class AudioFileWriter {
     header.write('data', 36);
     header.writeUInt32LE(dataSize, 40);
 
-    return Buffer.concat([header, pcmData]);
+    return header;
   }
 
   /**
