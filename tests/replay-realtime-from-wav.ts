@@ -10,6 +10,7 @@ interface ReplayOptions {
   language: string;
   chunkMs: number;
   speed: number;
+  settleMs: number;
   outputPath: string | null;
 }
 
@@ -38,8 +39,9 @@ function parseArgs(): ReplayOptions {
     serverUrl: args.get('server-url') || process.env.TEST_SERVER_URL || 'ws://localhost:8080/stt',
     apiToken: args.get('api-token') || process.env.TEST_API_TOKEN || 'token-device-a',
     language: args.get('language') || 'zh',
-    chunkMs: Number(args.get('chunk-ms') || '100'),
-    speed: Number(args.get('speed') || '1'),
+    chunkMs: Number(args.get('chunk-ms') || '200'),
+    speed: Number(args.get('speed') || '4'),
+    settleMs: Number(args.get('settle-ms') || '15000'),
     outputPath: args.get('output') || null,
   };
 }
@@ -96,7 +98,7 @@ async function main(): Promise<void> {
 
   console.log(`[Replay] input=${inputPath}`);
   console.log(`[Replay] server=${url.toString()}`);
-  console.log(`[Replay] chunkMs=${options.chunkMs} speed=${options.speed}`);
+  console.log(`[Replay] chunkMs=${options.chunkMs} speed=${options.speed} settleMs=${options.settleMs}`);
 
   const pcm = await decodeToPcmBuffer(inputPath);
   const bytesPerMs = 16000 * 2 / 1000;
@@ -112,10 +114,12 @@ async function main(): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const ws = new WebSocket(url);
     let finished = false;
+    let settleTimer: NodeJS.Timeout | null = null;
 
     const fail = (err: Error): void => {
       if (finished) return;
       finished = true;
+      if (settleTimer) clearTimeout(settleTimer);
       try {
         ws.close();
       } catch {
@@ -136,6 +140,17 @@ async function main(): Promise<void> {
 
         console.log('[Replay] audio finished, sending CloseStream');
         ws.send(JSON.stringify({ type: 'CloseStream' }));
+        settleTimer = setTimeout(() => {
+          if (finished) return;
+          finished = true;
+          console.log('[Replay] settle timeout reached, closing websocket locally');
+          try {
+            ws.close();
+          } catch {
+            // ignore
+          }
+          resolve();
+        }, options.settleMs);
       } catch (err) {
         fail(err as Error);
       }
@@ -150,6 +165,7 @@ async function main(): Promise<void> {
     ws.on('close', code => {
       if (finished) return;
       finished = true;
+      if (settleTimer) clearTimeout(settleTimer);
       console.log(`[Replay] websocket closed code=${code}`);
       resolve();
     });

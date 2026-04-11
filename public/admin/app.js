@@ -341,12 +341,16 @@
 
     qs('#conversation-speakers').innerHTML = detail.speakers.length
       ? detail.speakers.map((speaker) => `
-        <article class="segment-item">
-          <div class="segment-title">
-            <span>${escapeHtml(speaker.display_name)}</span>
+        <article class="speaker-summary-item">
+          <div class="speaker-summary-main">
+            <strong>${escapeHtml(speaker.speaker_label || speaker.display_name || '-')}</strong>
             <span class="subtle">${escapeHtml(speaker.identity_label || '身份未确认')}</span>
           </div>
-          <p class="subtle">片段 ${speaker.segment_count}，总时长 ${(speaker.total_duration_ms / 1000).toFixed(1)}s</p>
+          <div class="speaker-summary-meta subtle">
+            <span>${escapeHtml(speaker.display_name || '-')}</span>
+            <span>片段 ${speaker.segment_count}</span>
+            <span>${(speaker.total_duration_ms / 1000).toFixed(1)}s</span>
+          </div>
         </article>
       `).join('')
       : '<p class="subtle">暂无参与者信息。</p>';
@@ -354,17 +358,25 @@
     qs('#conversation-segments').innerHTML = detail.segments.length
       ? detail.segments.map((segment) => {
         const needsConfirmation = !segment.speaker_name || !segment.speaker_identity;
+        const speakerChanged = (segment.original_speaker_label || '-') !== (segment.speaker_label || '-');
         return `
-          <article class="segment-item">
-            <div class="segment-title">
-              <span>${escapeHtml(segment.display_name)}</span>
-              <span class="subtle">${escapeHtml(formatDate(segment.absolute_start_time))}</span>
+          <article class="transcript-row ${speakerChanged ? 'changed' : ''}">
+            <div class="transcript-time">
+              <span>${escapeHtml(formatDate(segment.absolute_start_time))}</span>
+              <span class="subtle">${Math.round(segment.start_ms / 1000)}s - ${Math.round(segment.end_ms / 1000)}s</span>
             </div>
-            <div class="badge-row">
+            <div class="transcript-speakers">
+              <span class="badge">原始 ${escapeHtml(segment.original_speaker_label || '-')}</span>
+              <span class="badge ${speakerChanged ? 'warning' : ''}">最终 ${escapeHtml(segment.speaker_label || '-')}</span>
+            </div>
+            <div class="transcript-text">
+              <div class="transcript-display-name subtle">${escapeHtml(segment.display_name || '-')}</div>
+              <div>${highlightText(segment.text, keyword)}</div>
+            </div>
+            <div class="transcript-actions">
               <span class="badge ${segment.speaker_identity ? '' : 'danger'}">${escapeHtml(segment.speaker_identity || '身份未确认')}</span>
               ${needsConfirmation && segment.speaker_id ? `<button class="inline-action secondary-button" data-go-speaker="${segment.speaker_id}">去确认</button>` : ''}
             </div>
-            <p>${highlightText(segment.text, keyword)}</p>
           </article>
         `;
       }).join('')

@@ -5,7 +5,12 @@ import { SonioxNodeClient } from '@soniox/node';
 import { db, initDb } from '../src/db';
 import { finalizeConversation } from '../src/services/conversation-finalizer';
 import { mapSpeakersForConversation } from '../src/services/speaker-mapper';
+import { alignConversationSpeakers } from '../src/services/speaker-alignment';
 import { SonioxToken } from '../src/types';
+
+function shouldRunSpeakerIdentityMapping(): boolean {
+  return process.env.ENABLE_SPEAKER_IDENTITY_MAPPING === 'true';
+}
 
 function genId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -129,6 +134,15 @@ async function main(): Promise<void> {
     outputDir: finalDir,
     recordingStartedAt,
   });
+  const aligned = await alignConversationSpeakers({
+    sessionId,
+    audioPath,
+    segments: finalized.segments,
+  });
+  const segmentsForStorage = aligned.segments;
+  const originalSpeakerBySegmentId = new Map(
+    aligned.alignmentRows.map(row => [row.id, row.original_speaker_label]),
+  );
 
   await fs.mkdir(audioUploadsDir, { recursive: true });
   const importedAudioPath = path.join(audioUploadsDir, `${sessionId}.wav`);
@@ -139,8 +153,8 @@ async function main(): Promise<void> {
   const conversationId = genId('conv');
   const audioFileId = genId('aud');
   const now = new Date().toISOString();
-  const durationMs = finalized.segments.length
-    ? Math.max(...finalized.segments.map(segment => segment.end_ms))
+  const durationMs = segmentsForStorage.length
+    ? Math.max(...segmentsForStorage.map(segment => segment.end_ms))
     : 0;
 
   const tx = db.transaction(() => {
@@ -185,12 +199,12 @@ async function main(): Promise<void> {
       INSERT INTO conversation_segments (
         id, conversation_id, audio_file_id,
         start_ms, end_ms, absolute_start_time, absolute_end_time,
-        speaker_label, speaker_id, speaker_name, text,
+        original_speaker_label, speaker_label, speaker_id, speaker_name, text,
         confidence, resolution_method, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    for (const segment of finalized.segments) {
+    for (const segment of segmentsForStorage) {
       insertSegment.run(
         segment.id,
         conversationId,
@@ -199,6 +213,7 @@ async function main(): Promise<void> {
         segment.end_ms,
         segment.absolute_start_time,
         segment.absolute_end_time,
+        originalSpeakerBySegmentId.get(segment.id) ?? segment.speaker_label,
         segment.speaker_label,
         null,
         null,
@@ -212,7 +227,9 @@ async function main(): Promise<void> {
   });
   tx();
 
-  await mapSpeakersForConversation(conversationId);
+  if (shouldRunSpeakerIdentityMapping()) {
+    await mapSpeakersForConversation(conversationId);
+  }
 
   const stats = db.prepare(`
     SELECT
@@ -234,6 +251,7 @@ async function main(): Promise<void> {
         conversationId,
         rawTranscriptPath,
         finalizedPath: finalized.outPath,
+        alignmentPath: aligned.alignmentOutputPath,
         stats,
       },
       null,

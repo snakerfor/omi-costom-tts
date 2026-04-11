@@ -54,6 +54,7 @@ export function initDb(): void {
       end_ms INTEGER NOT NULL,
       absolute_start_time TEXT,
       absolute_end_time TEXT,
+      original_speaker_label TEXT,
       speaker_label TEXT,
       speaker_id TEXT,
       speaker_name TEXT,
@@ -101,6 +102,7 @@ export function initDb(): void {
   addColumnIfMissing('speakers', 'first_seen_at', 'TEXT');
   addColumnIfMissing('speakers', 'last_seen_at', 'TEXT');
   addColumnIfMissing('conversation_segments', 'speaker_identity', 'TEXT');
+  addColumnIfMissing('conversation_segments', 'original_speaker_label', 'TEXT');
 
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_speakers_status ON speakers(status);

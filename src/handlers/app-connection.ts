@@ -10,6 +10,11 @@ import { FinalResultRecorder } from '../services/final-result-recorder';
 import { finalizeConversation } from '../services/conversation-finalizer';
 import { db } from '../db';
 import { mapSpeakersForConversation } from '../services/speaker-mapper';
+import { alignConversationSpeakers } from '../services/speaker-alignment';
+
+function shouldRunSpeakerIdentityMapping(): boolean {
+  return process.env.ENABLE_SPEAKER_IDENTITY_MAPPING === 'true';
+}
 
 function genId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -100,10 +105,19 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
         outputDir: FINALIZED_RESULTS_DIR,
         recordingStartedAt: firstAudioFrameAt ?? connectedAt,
       });
+      const aligned = await alignConversationSpeakers({
+        sessionId,
+        audioPath: audioFilePath,
+        segments: finalized.segments,
+      });
+      const segmentsForStorage = aligned.segments;
+      const originalSpeakerBySegmentId = new Map(
+        aligned.alignmentRows.map(row => [row.id, row.original_speaker_label]),
+      );
 
       const now = new Date().toISOString();
-      const durationMs = finalized.segments.length
-        ? Math.max(...finalized.segments.map(seg => seg.end_ms))
+      const durationMs = segmentsForStorage.length
+        ? Math.max(...segmentsForStorage.map(seg => seg.end_ms))
         : 0;
 
       const tx = db.transaction(() => {
@@ -133,12 +147,12 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
           INSERT INTO conversation_segments (
             id, conversation_id, audio_file_id,
             start_ms, end_ms, absolute_start_time, absolute_end_time,
-            speaker_label, speaker_id, speaker_name, text,
+            original_speaker_label, speaker_label, speaker_id, speaker_name, text,
             confidence, resolution_method, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
-        for (const seg of finalized.segments) {
+        for (const seg of segmentsForStorage) {
           insertSeg.run(
             seg.id,
             conversationId,
@@ -147,6 +161,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
             seg.end_ms,
             seg.absolute_start_time,
             seg.absolute_end_time,
+            originalSpeakerBySegmentId.get(seg.id) ?? seg.speaker_label,
             seg.speaker_label,
             null,
             null,
@@ -174,11 +189,15 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
 
       tx();
 
-      void mapSpeakersForConversation(conversationId).catch(err => {
-        console.error('[SpeakerMapper] failed:', err);
-      });
+      if (shouldRunSpeakerIdentityMapping()) {
+        void mapSpeakersForConversation(conversationId).catch(err => {
+          console.error('[SpeakerMapper] failed:', err);
+        });
+      }
 
-      console.log(`[Finalize] session=${sessionId}, reason=${reason}, output=${finalized.outPath}, segments=${finalized.segments.length}`);
+      console.log(
+        `[Finalize] session=${sessionId}, reason=${reason}, output=${finalized.outPath}, segments=${segmentsForStorage.length}, alignment=${aligned.alignmentOutputPath || 'disabled'}, identity_mapping=${shouldRunSpeakerIdentityMapping() ? 'enabled' : 'disabled'}`,
+      );
     } catch (err) {
       console.error('[Finalize] failed:', err);
       try {
@@ -186,7 +205,13 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
           UPDATE conversations
           SET status = ?, ended_at = ?, error_message = ?, updated_at = ?
           WHERE id = ?
-        `).run('failed', new Date().toISOString(), String((err as Error)?.message ?? err), new Date().toISOString(), conversationId);
+        `).run(
+          'failed',
+          new Date().toISOString(),
+          String((err as Error)?.message ?? err),
+          new Date().toISOString(),
+          conversationId,
+        );
       } catch (dbErr) {
         console.error('[DB] failed to mark conversation failed:', dbErr);
       }

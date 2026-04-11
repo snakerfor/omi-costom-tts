@@ -8,6 +8,7 @@ import { FinalResultRecorder } from '../src/services/final-result-recorder';
 import { finalizeConversation } from '../src/services/conversation-finalizer';
 import { AudioFileWriter } from '../src/services/audio-file-writer';
 import { assignLocalSpeakerClusters, findBestMatchFromRows } from '../src/services/speaker-mapper';
+import { alignByOverlap, smoothBoundaryRows } from '../src/services/speaker-alignment';
 
 async function testValidateConnection(): Promise<void> {
   process.env.ACCESS_TOKENS = 'token-a,token-b';
@@ -205,6 +206,75 @@ function testLocalClusterBridgesShortInterjection(): void {
   assert.equal(bridge?.method, 'neighbor_bridge');
 }
 
+function testSpeakerAlignmentUsesPyannoteOverlap(): void {
+  const rows = alignByOverlap(
+    [
+      {
+        id: 'seg-1',
+        start_ms: 0,
+        end_ms: 2000,
+        absolute_start_time: '2026-01-01T00:00:00.000Z',
+        absolute_end_time: '2026-01-01T00:00:02.000Z',
+        speaker_label: '1',
+        text: '你好。',
+      },
+      {
+        id: 'seg-2',
+        start_ms: 2000,
+        end_ms: 4000,
+        absolute_start_time: '2026-01-01T00:00:02.000Z',
+        absolute_end_time: '2026-01-01T00:00:04.000Z',
+        speaker_label: '2',
+        text: '世界。',
+      },
+    ],
+    [
+      { speaker: 'SPEAKER_00', start_ms: 0, end_ms: 1900 },
+      { speaker: 'SPEAKER_01', start_ms: 2000, end_ms: 4000 },
+    ],
+  );
+
+  assert.equal(rows[0]?.aligned_speaker, 'SPEAKER_00');
+  assert.equal(rows[1]?.aligned_speaker, 'SPEAKER_01');
+}
+
+function testSpeakerAlignmentSmoothsBoundaryInterjection(): void {
+  const smoothed = smoothBoundaryRows([
+    {
+      id: 'seg-1',
+      start_ms: 0,
+      end_ms: 3000,
+      duration_ms: 3000,
+      original_speaker_label: '1',
+      aligned_speaker: 'SPEAKER_00',
+      overlap_ratio: 0.98,
+      text: '前面长句。',
+    },
+    {
+      id: 'seg-2',
+      start_ms: 3000,
+      end_ms: 3600,
+      duration_ms: 600,
+      original_speaker_label: '2',
+      aligned_speaker: 'SPEAKER_01',
+      overlap_ratio: 0.2,
+      text: '对。',
+    },
+    {
+      id: 'seg-3',
+      start_ms: 3600,
+      end_ms: 6200,
+      duration_ms: 2600,
+      original_speaker_label: '1',
+      aligned_speaker: 'SPEAKER_00',
+      overlap_ratio: 0.97,
+      text: '后面长句。',
+    },
+  ]);
+
+  assert.equal(smoothed[1]?.aligned_speaker, 'SPEAKER_00', 'short weak boundary segment should follow surrounding speaker');
+}
+
 async function main(): Promise<void> {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'omi-custom-tts-'));
 
@@ -216,13 +286,17 @@ async function main(): Promise<void> {
     testSpeakerMatchRequiresThresholdAndMargin();
     testLocalClusterMergesDifferentSonioxLabels();
     testLocalClusterBridgesShortInterjection();
+    testSpeakerAlignmentUsesPyannoteOverlap();
+    testSpeakerAlignmentSmoothsBoundaryInterjection();
     console.log('unit tests passed');
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
 }
 
-main().catch(err => {
-  console.error(err);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch(err => {
+    console.error(err);
+    process.exit(1);
+  });

@@ -32,6 +32,7 @@ export interface ConversationListRow {
 }
 
 export interface ConversationSpeakerSummary {
+  speaker_label: string | null;
   speaker_id: string | null;
   speaker_name: string | null;
   display_name: string;
@@ -47,6 +48,7 @@ export interface ConversationSegmentRow {
   end_ms: number;
   absolute_start_time: string | null;
   absolute_end_time: string | null;
+  original_speaker_label: string | null;
   speaker_label: string | null;
   speaker_id: string | null;
   speaker_name: string | null;
@@ -195,15 +197,15 @@ export function listConversations(filters: ConversationListFilters): PaginatedRe
       c.created_at,
       c.updated_at,
       COUNT(cs.id) AS segment_count,
-      COUNT(DISTINCT COALESCE(cs.speaker_id, cs.speaker_label, 'unknown')) AS speaker_count,
+      COUNT(DISTINCT COALESCE(cs.speaker_label, 'unknown')) AS speaker_count,
       COUNT(DISTINCT CASE
         WHEN s.name IS NOT NULL AND TRIM(s.name) != '' AND s.identity_label IS NOT NULL AND TRIM(s.identity_label) != ''
-        THEN COALESCE(cs.speaker_id, cs.speaker_label, 'unknown')
+        THEN COALESCE(cs.speaker_label, 'unknown')
         ELSE NULL
       END) AS confirmed_speaker_count,
       COUNT(DISTINCT CASE
         WHEN s.id IS NULL OR s.name IS NULL OR TRIM(s.name) = '' OR s.identity_label IS NULL OR TRIM(s.identity_label) = ''
-        THEN COALESCE(cs.speaker_id, cs.speaker_label, 'unknown')
+        THEN COALESCE(cs.speaker_label, 'unknown')
         ELSE NULL
       END) AS unconfirmed_speaker_count,
       COALESCE(GROUP_CONCAT(CASE WHEN cs.text IS NOT NULL AND TRIM(cs.text) != '' THEN cs.text END, ' '), '') AS summary_text
@@ -239,15 +241,15 @@ export function getConversationDetail(conversationId: string): ConversationDetai
       c.created_at,
       c.updated_at,
       COUNT(cs.id) AS segment_count,
-      COUNT(DISTINCT COALESCE(cs.speaker_id, cs.speaker_label, 'unknown')) AS speaker_count,
+      COUNT(DISTINCT COALESCE(cs.speaker_label, 'unknown')) AS speaker_count,
       COUNT(DISTINCT CASE
         WHEN s.name IS NOT NULL AND TRIM(s.name) != '' AND s.identity_label IS NOT NULL AND TRIM(s.identity_label) != ''
-        THEN COALESCE(cs.speaker_id, cs.speaker_label, 'unknown')
+        THEN COALESCE(cs.speaker_label, 'unknown')
         ELSE NULL
       END) AS confirmed_speaker_count,
       COUNT(DISTINCT CASE
         WHEN s.id IS NULL OR s.name IS NULL OR TRIM(s.name) = '' OR s.identity_label IS NULL OR TRIM(s.identity_label) = ''
-        THEN COALESCE(cs.speaker_id, cs.speaker_label, 'unknown')
+        THEN COALESCE(cs.speaker_label, 'unknown')
         ELSE NULL
       END) AS unconfirmed_speaker_count,
       COALESCE(GROUP_CONCAT(CASE WHEN cs.text IS NOT NULL AND TRIM(cs.text) != '' THEN cs.text END, ' '), '') AS summary_text
@@ -266,20 +268,30 @@ export function getConversationDetail(conversationId: string): ConversationDetai
 
   const speakers = db.prepare(`
     SELECT
-      cs.speaker_id,
-      s.name AS speaker_name,
-      COALESCE(s.name, s.display_label, cs.speaker_name, cs.speaker_label, '未知发言人') AS display_name,
-      COALESCE(s.identity_label, cs.speaker_identity) AS identity_label,
+      cs.speaker_label,
+      MIN(cs.speaker_id) AS speaker_id,
+      MAX(s.name) AS speaker_name,
+      COALESCE(
+        MAX(s.name),
+        MAX(s.display_label),
+        MAX(cs.speaker_name),
+        cs.speaker_label,
+        '未知发言人'
+      ) AS display_name,
+      COALESCE(MAX(s.identity_label), MAX(cs.speaker_identity)) AS identity_label,
       COUNT(cs.id) AS segment_count,
       SUM(COALESCE(cs.end_ms, 0) - COALESCE(cs.start_ms, 0)) AS total_duration_ms,
       CASE
-        WHEN s.name IS NOT NULL AND TRIM(s.name) != '' AND s.identity_label IS NOT NULL AND TRIM(s.identity_label) != '' THEN 1
+        WHEN MAX(CASE
+          WHEN s.name IS NOT NULL AND TRIM(s.name) != '' AND s.identity_label IS NOT NULL AND TRIM(s.identity_label) != '' THEN 1
+          ELSE 0
+        END) = 1 THEN 1
         ELSE 0
       END AS is_confirmed
     FROM conversation_segments cs
     LEFT JOIN speakers s ON s.id = cs.speaker_id
     WHERE cs.conversation_id = ?
-    GROUP BY cs.speaker_id, s.name, s.display_label, s.identity_label, cs.speaker_name, cs.speaker_label, cs.speaker_identity
+    GROUP BY cs.speaker_label
     ORDER BY total_duration_ms DESC, segment_count DESC
   `).all(conversationId) as ConversationSpeakerSummary[];
 
@@ -290,6 +302,7 @@ export function getConversationDetail(conversationId: string): ConversationDetai
       cs.end_ms,
       cs.absolute_start_time,
       cs.absolute_end_time,
+      cs.original_speaker_label,
       cs.speaker_label,
       cs.speaker_id,
       cs.speaker_name,
