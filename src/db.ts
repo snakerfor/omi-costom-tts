@@ -28,6 +28,13 @@ export function initDb(): void {
       ended_at TEXT,
       raw_result_path TEXT,
       audio_file_path TEXT,
+      vad_mode TEXT,
+      vad_total_audio_ms INTEGER,
+      vad_detected_speech_ms INTEGER,
+      vad_detected_silence_ms INTEGER,
+      vad_sent_audio_ms INTEGER,
+      vad_suppressed_audio_ms INTEGER,
+      vad_state_transitions INTEGER,
       error_message TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -94,6 +101,127 @@ export function initDb(): void {
       source TEXT,
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS omi_sync_sources (
+      source_key TEXT PRIMARY KEY,
+      display_name TEXT,
+      last_seen_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS omi_sync_checkpoints (
+      source_key TEXT NOT NULL,
+      entity_name TEXT NOT NULL,
+      last_received_id INTEGER NOT NULL DEFAULT 0,
+      last_received_at TEXT,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (source_key, entity_name)
+    );
+
+    CREATE TABLE IF NOT EXISTS omi_video_chunks (
+      id TEXT PRIMARY KEY,
+      source_key TEXT NOT NULL,
+      video_chunk_path TEXT NOT NULL,
+      sha256 TEXT,
+      size_bytes INTEGER,
+      storage_path TEXT NOT NULL,
+      upload_status TEXT NOT NULL,
+      first_seen_at TEXT NOT NULL,
+      last_uploaded_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS omi_screenshots (
+      id TEXT PRIMARY KEY,
+      source_key TEXT NOT NULL,
+      source_screenshot_id INTEGER NOT NULL,
+      ts TEXT NOT NULL,
+      app_name TEXT NOT NULL,
+      window_title TEXT,
+      image_path TEXT,
+      ocr_text TEXT,
+      focus_status TEXT,
+      video_chunk_path TEXT,
+      frame_offset INTEGER,
+      raw_payload_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS omi_transcription_sessions (
+      id TEXT PRIMARY KEY,
+      source_key TEXT NOT NULL,
+      source_session_id INTEGER NOT NULL,
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      source TEXT NOT NULL,
+      language TEXT,
+      status TEXT,
+      title TEXT,
+      overview TEXT,
+      raw_payload_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS omi_transcription_segments (
+      id TEXT PRIMARY KEY,
+      source_key TEXT NOT NULL,
+      source_segment_id INTEGER NOT NULL,
+      source_session_id INTEGER NOT NULL,
+      speaker INTEGER,
+      speaker_label TEXT,
+      text TEXT NOT NULL,
+      start_time REAL,
+      end_time REAL,
+      segment_order INTEGER,
+      raw_payload_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS omi_observations (
+      id TEXT PRIMARY KEY,
+      source_key TEXT NOT NULL,
+      source_observation_id INTEGER NOT NULL,
+      source_screenshot_id INTEGER,
+      app_name TEXT NOT NULL,
+      context_summary TEXT,
+      current_activity TEXT,
+      has_task INTEGER NOT NULL DEFAULT 0,
+      task_title TEXT,
+      raw_payload_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS omi_memories (
+      id TEXT PRIMARY KEY,
+      source_key TEXT NOT NULL,
+      source_memory_id INTEGER NOT NULL,
+      backend_id TEXT,
+      content TEXT NOT NULL,
+      category TEXT NOT NULL,
+      source_app TEXT,
+      confidence REAL,
+      created_at_source TEXT,
+      updated_at_source TEXT,
+      raw_payload_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS omi_import_runs (
+      id TEXT PRIMARY KEY,
+      source_key TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      status TEXT NOT NULL,
+      metadata_summary_json TEXT,
+      notes TEXT
+    );
   `);
 
   addColumnIfMissing('speakers', 'identity_label', 'TEXT');
@@ -103,6 +231,13 @@ export function initDb(): void {
   addColumnIfMissing('speakers', 'last_seen_at', 'TEXT');
   addColumnIfMissing('conversation_segments', 'speaker_identity', 'TEXT');
   addColumnIfMissing('conversation_segments', 'original_speaker_label', 'TEXT');
+  addColumnIfMissing('conversations', 'vad_mode', 'TEXT');
+  addColumnIfMissing('conversations', 'vad_total_audio_ms', 'INTEGER');
+  addColumnIfMissing('conversations', 'vad_detected_speech_ms', 'INTEGER');
+  addColumnIfMissing('conversations', 'vad_detected_silence_ms', 'INTEGER');
+  addColumnIfMissing('conversations', 'vad_sent_audio_ms', 'INTEGER');
+  addColumnIfMissing('conversations', 'vad_suppressed_audio_ms', 'INTEGER');
+  addColumnIfMissing('conversations', 'vad_state_transitions', 'INTEGER');
 
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_speakers_status ON speakers(status);
@@ -113,5 +248,15 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_conversation_segments_conversation_id ON conversation_segments(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_conversation_segments_speaker_id ON conversation_segments(speaker_id);
     CREATE INDEX IF NOT EXISTS idx_conversation_segments_absolute_start_time ON conversation_segments(absolute_start_time);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_omi_video_chunks_unique ON omi_video_chunks(source_key, video_chunk_path);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_omi_screenshots_unique ON omi_screenshots(source_key, source_screenshot_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_omi_transcription_sessions_unique ON omi_transcription_sessions(source_key, source_session_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_omi_transcription_segments_unique ON omi_transcription_segments(source_key, source_segment_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_omi_observations_unique ON omi_observations(source_key, source_observation_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_omi_memories_unique ON omi_memories(source_key, source_memory_id);
+    CREATE INDEX IF NOT EXISTS idx_omi_screenshots_ts ON omi_screenshots(ts);
+    CREATE INDEX IF NOT EXISTS idx_omi_screenshots_video_chunk_path ON omi_screenshots(video_chunk_path);
+    CREATE INDEX IF NOT EXISTS idx_omi_transcription_segments_session_id ON omi_transcription_segments(source_session_id);
+    CREATE INDEX IF NOT EXISTS idx_omi_memories_backend_id ON omi_memories(backend_id);
   `);
 }

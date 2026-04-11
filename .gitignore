@@ -11,6 +11,7 @@ dist/
 
 # Runtime data
 app.db
+data/omi-videos/
 
 # Test artifacts
 tests/audio-uploads/

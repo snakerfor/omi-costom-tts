@@ -20,6 +20,7 @@ import { getConversationDetail, listConversations } from './services/conversatio
 import { AudioFileWriter } from './services/audio-file-writer';
 import { parseNumber, readJsonBody, sendJson } from './utils/http';
 import { IDENTITY_OPTIONS } from './constants/identity-options';
+import { ingestMetadata, storeVideoChunk, verifySyncToken } from './services/omi-sync-service';
 
 const PORT = parseInt(process.env.PORT ?? '8080', 10);
 
@@ -163,6 +164,48 @@ function enrichConversation(row: any): any {
 }
 
 async function handleApiRequest(req: IncomingMessage, res: ServerResponse, urlObj: URL): Promise<boolean> {
+  if (urlObj.pathname.startsWith('/api/omi-sync/')) {
+    const token = req.headers['x-omi-sync-token'];
+    const tokenValue = Array.isArray(token) ? token[0] : token;
+    if (!verifySyncToken(tokenValue)) {
+      sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+      return true;
+    }
+  }
+
+  if (req.method === 'POST' && urlObj.pathname === '/api/omi-sync/metadata') {
+    const body = await readJsonBody<{
+      sourceKey: string;
+      sourceName?: string;
+      batches: Record<string, Array<Record<string, unknown>>>;
+    }>(req);
+    sendJson(res, 200, { ok: true, data: ingestMetadata(body as any) });
+    return true;
+  }
+
+  if (req.method === 'POST' && urlObj.pathname === '/api/omi-sync/video') {
+    const sourceKey = urlObj.searchParams.get('sourceKey') || '';
+    const videoChunkPath = urlObj.searchParams.get('videoChunkPath') || '';
+    if (!sourceKey || !videoChunkPath) {
+      sendJson(res, 400, { ok: false, error: 'sourceKey and videoChunkPath are required' });
+      return true;
+    }
+
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    const payload = Buffer.concat(chunks);
+    const sha256 = urlObj.searchParams.get('sha256') || undefined;
+    const sizeBytesRaw = urlObj.searchParams.get('sizeBytes');
+    const sizeBytes = sizeBytesRaw ? Number(sizeBytesRaw) : undefined;
+    sendJson(res, 200, {
+      ok: true,
+      data: storeVideoChunk({ sourceKey, videoChunkPath, sha256, sizeBytes }, payload),
+    });
+    return true;
+  }
+
   if (req.method === 'GET' && urlObj.pathname === '/api/speakers') {
     const result = listSpeakers({
       q: urlObj.searchParams.get('q') || undefined,
