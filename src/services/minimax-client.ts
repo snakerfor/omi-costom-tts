@@ -53,19 +53,28 @@ export async function chatCompletion(prompt: string, options?: {
     messages.push({ role: 'user', content: prompt });
   }
 
-  const resp = await fetch(MINIMAX_BASE_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: MINIMAX_MODEL,
-      max_tokens: maxTokens,
-      messages,
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+
+  let resp: Response;
+  try {
+    resp = await fetch(MINIMAX_BASE_URL, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: MINIMAX_MODEL,
+        max_tokens: maxTokens,
+        messages,
+      }),
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!resp.ok) {
     const errText = await resp.text();

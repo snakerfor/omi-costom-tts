@@ -365,17 +365,30 @@ async function main(): Promise<void> {
   console.log(`[conversations] merged drafts: ${merged.length}`);
 
   let aiCount = 0;
-  for (const draft of merged) {
+  for (let idx = 0; idx < merged.length; idx++) {
+    const draft = merged[idx];
     let aiResult = null;
     if (args.ai) {
-      aiResult = await enhanceWithAI(draft);
-      if (aiResult) aiCount++;
+      const tag = `[${idx + 1}/${merged.length}]`;
+      const evtCount = draft.events.filter(e => e.content_text).length;
+      if (evtCount >= 2) {
+        console.log(`${tag} enhancing "${draft.started_at.slice(0, 16)}" (${evtCount} text events)...`);
+        aiResult = await enhanceWithAI(draft);
+        if (aiResult) {
+          aiCount++;
+          console.log(`${tag} ✓ AI: "${aiResult.title}"`);
+        } else {
+          console.log(`${tag} ✗ AI skipped/failed, using programmatic`);
+        }
+      } else {
+        console.log(`${tag} skip AI (only ${evtCount} text events)`);
+      }
     }
 
     db.transaction(() => persistDraft(draft, aiResult))();
   }
 
-  console.log(`[conversations] persisted: ${merged.length} conversations (${aiCount} AI-enhanced)`);
+  console.log(`\n[conversations] persisted: ${merged.length} conversations (${aiCount} AI-enhanced)`);
 
   const stats = db.prepare(`
     SELECT review_status, COUNT(*) AS cnt FROM knowledge_conversations GROUP BY review_status
