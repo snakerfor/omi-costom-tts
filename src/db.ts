@@ -15,6 +15,22 @@ function addColumnIfMissing(tableName: string, columnName: string, definition: s
   }
 }
 
+function recoverDanglingRecordingConversations(): void {
+  const now = new Date().toISOString();
+  const result = db.prepare(`
+    UPDATE conversations
+    SET status = 'failed',
+        ended_at = COALESCE(ended_at, ?),
+        updated_at = ?,
+        error_message = COALESCE(error_message, 'recovered_after_server_restart')
+    WHERE status = 'recording'
+  `).run(now, now) as { changes?: number };
+
+  if ((result?.changes ?? 0) > 0) {
+    console.log(`[DB] recovered dangling recording conversations: ${result.changes}`);
+  }
+}
+
 export function initDb(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS conversations (
@@ -259,4 +275,6 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_omi_transcription_segments_session_id ON omi_transcription_segments(source_session_id);
     CREATE INDEX IF NOT EXISTS idx_omi_memories_backend_id ON omi_memories(backend_id);
   `);
+
+  recoverDanglingRecordingConversations();
 }

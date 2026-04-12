@@ -1,6 +1,7 @@
 import WebSocket from 'ws';
 import { IncomingMessage } from 'http';
 import * as path from 'path';
+import { createHash } from 'crypto';
 import { validateConnection } from '../middleware/auth';
 import { createSonioxSession } from '../services/soniox-session';
 import { SegmentBuilder } from '../utils/segment-builder';
@@ -21,12 +22,36 @@ function genId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+const activeConnectionsByUid = new Map<string, WebSocket>();
+
+function resolveClientUid(req: IncomingMessage): string {
+  const url = new URL(req.url ?? '', 'ws://localhost');
+  const token = url.searchParams.get('api_key') ?? '';
+  if (!token) {
+    return 'unknown_client';
+  }
+  const digest = createHash('sha1').update(token).digest('hex').slice(0, 16);
+  return `token_${digest}`;
+}
+
 export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   // 1. Auth
   if (!validateConnection(req)) {
     ws.close(4401, 'Unauthorized');
     return;
   }
+  const clientUid = resolveClientUid(req);
+
+  const existingConnection = activeConnectionsByUid.get(clientUid);
+  if (existingConnection && existingConnection !== ws && existingConnection.readyState === WebSocket.OPEN) {
+    console.log(`[SessionGuard] Closing superseded connection for uid=${clientUid}`);
+    try {
+      existingConnection.close(4001, 'superseded_by_new_connection');
+    } catch {
+      // Ignore close failures.
+    }
+  }
+  activeConnectionsByUid.set(clientUid, ws);
 
   const builder = new SegmentBuilder();
   let sonioxSession: ReturnType<typeof createSonioxSession> | null = null;
@@ -78,14 +103,23 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   });
 
   try {
+    const now = new Date().toISOString();
+    db.prepare(`
+      UPDATE conversations
+      SET status = 'failed', ended_at = ?, updated_at = ?,
+          error_message = COALESCE(error_message, 'superseded_by_new_connection')
+      WHERE uid = ? AND status = 'recording'
+    `).run(now, now, clientUid);
+
     db.prepare(`
       INSERT INTO conversations (
-        id, session_id, status, websocket_connected_at, first_audio_frame_at,
+        id, session_id, uid, status, websocket_connected_at, first_audio_frame_at,
         raw_result_path, audio_file_path, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       conversationId,
       sessionId,
+      clientUid,
       'recording',
       connectedAt,
       connectedAt,
@@ -492,6 +526,9 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   // 6. Cleanup
   ws.on('close', () => {
     console.log('[APP] Connection closed');
+    if (activeConnectionsByUid.get(clientUid) === ws) {
+      activeConnectionsByUid.delete(clientUid);
+    }
     stopAcceptingAudio();
     try {
       sonioxSession?.close();
