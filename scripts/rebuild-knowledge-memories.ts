@@ -80,7 +80,7 @@ function extractCandidatesByRules(_conv: Conversation, _textParts: string[]): Ca
 // ─── AI-based extraction (MiniMax) ───
 
 async function extractCandidatesByAI(conv: Conversation, transcript: string): Promise<CandidateFromAI[]> {
-  const prompt = `Extract ONLY high-value, long-term memory facts from this conversation.
+  const prompt = `You are a personal knowledge assistant. Extract long-term facts from this conversation that are worth remembering.
 
 <context>
 Conversation: ${conv.title || conv.id}
@@ -91,35 +91,33 @@ Time: ${conv.started_at}
 ${transcript.slice(0, 6000)}
 </transcript>
 
-STRICT RULES — only extract facts that:
-1. Are SPECIFIC and ACTIONABLE (names, numbers, decisions, tools, relationships)
-2. Will remain true for weeks/months, not just today
-3. Are about the USER or people the user knows — not generic knowledge
-4. Each fact must be DISTINCT — do not repeat the same information in different words
+Good examples of what to extract:
+- "用户正在开发OMI Custom TTS项目，使用Soniox做语音识别" (project context)
+- "用户的同事张三负责前端开发" (person/relationship)
+- "用户偏好使用MiniMax而非OpenAI" (preference)
+- "每周一团队会做代码review" (recurring_task)
 
 Do NOT extract:
-- Generic facts anyone could Google (e.g. "X is an open-source project on GitHub")
-- Temporary states, moods, or one-time events
-- Vague descriptions (e.g. "discussed technical topics")
-- Repository stats (stars, forks, releases)
-- Greetings, small talk, casual chatter
-- Software license information
-- OCR artifacts or garbled text
+- Generic public knowledge (e.g. "React is a JavaScript framework")
+- Repository statistics (stars, forks, license)
+- Vague summaries (e.g. "discussed technical topics")
+- Garbled OCR text or meaningless fragments
+- One-time small talk or greetings
 
-QUALITY OVER QUANTITY: Return 0-5 items max. Most conversations should return 0-2 items. Only return items with confidence >= 0.75.
+Return 0-3 items per conversation. Most casual conversations should return [].
 
 Return a JSON array:
 [
   {
-    "candidate_text": "specific factual statement about the user or their world",
+    "candidate_text": "clear factual statement in the language of the content",
     "category": "person|relationship|project|preference|habit|work_context|recurring_task|fact",
-    "confidence": 0.75-1.0,
+    "confidence": 0.6-1.0,
     "evidence": "brief quote from transcript",
-    "why_long_term": "why this matters long-term"
+    "why_long_term": "one sentence reason"
   }
 ]
 
-If nothing qualifies, return []. Return raw JSON only, no markdown.`;
+If nothing worth remembering, return []. Return raw JSON only, no markdown.`;
 
   try {
     const text = await chatCompletion(prompt, { temperature: 0.2, maxTokens: 4096 });
@@ -289,8 +287,9 @@ async function main(): Promise<void> {
   const args = parseArgs();
 
   if (args.mode === 'full') {
-    console.log('[memories] full rebuild — clearing candidates');
+    console.log('[memories] full rebuild — clearing candidates and memories');
     db.exec('DELETE FROM knowledge_memory_candidates');
+    db.exec('DELETE FROM knowledge_memories');
   }
 
   const conversations = db.prepare(`

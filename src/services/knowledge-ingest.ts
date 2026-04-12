@@ -459,28 +459,22 @@ Rules: same language as content, topics max 5, action_items only if explicit, ra
 }
 
 async function extractMemoryCandidatesAI(conv: any, transcript: string): Promise<any[]> {
-  const prompt = `Extract ONLY high-value, long-term memory facts from this conversation.
+  const prompt = `You are a personal knowledge assistant. Extract long-term facts from this conversation that are worth remembering.
 
 <context>Conversation: ${conv.title || conv.id}, Time: ${conv.started_at}</context>
 <transcript>${transcript.slice(0, 6000)}</transcript>
 
-STRICT RULES — only extract facts that:
-1. Are SPECIFIC and ACTIONABLE (names, numbers, decisions, tools, relationships)
-2. Will remain true for weeks/months, not just today
-3. Are about the USER or people the user knows — not generic knowledge
-4. Each fact must be DISTINCT — do not repeat the same information in different words
+Good examples: project context, people/relationships, preferences, habits, recurring tasks.
+Do NOT extract: generic public knowledge, repo stats, vague summaries, garbled text, small talk.
+Return 0-3 items. Most casual conversations should return [].
 
-Do NOT extract: generic facts anyone could Google, temporary states, vague descriptions, repository stats, greetings, OCR artifacts.
-
-QUALITY OVER QUANTITY: Return 0-5 items max. Only return items with confidence >= 0.75.
-
-Return JSON array: [{"candidate_text":"specific fact about user","category":"person|relationship|project|preference|habit|work_context|recurring_task|fact","confidence":0.75-1.0,"evidence":"brief quote","why_long_term":"reason"}]
-If nothing qualifies, return []. Raw JSON only.`;
+Return JSON array: [{"candidate_text":"clear fact in content language","category":"person|relationship|project|preference|habit|work_context|recurring_task|fact","confidence":0.6-1.0,"evidence":"brief quote","why_long_term":"one sentence"}]
+If nothing worth remembering, return []. Raw JSON only.`;
 
   const text = await chatCompletion(prompt, { temperature: 0.2, maxTokens: 4096 });
   const arr = parseJSON<any[]>(text);
   if (!Array.isArray(arr)) return [];
-  return arr.filter((c: any) => c.candidate_text && c.category && typeof c.confidence === 'number' && c.confidence >= 0.75);
+  return arr.filter((c: any) => c.candidate_text && c.category && typeof c.confidence === 'number');
 }
 
 function extractMemoryCandidatesRules(_conv: any): any[] {
