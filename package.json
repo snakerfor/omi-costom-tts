@@ -14,10 +14,12 @@
     "generate:pcm": "ffmpeg -i tests/test.m4a -f s16le -ar 16000 -ac 1 tests/test.pcm"
   },
   "dependencies": {
+    "@playwright/test": "^1.49.0",
     "@soniox/node": "^1.1.2",
     "@types/better-sqlite3": "^7.6.13",
     "better-sqlite3": "^12.8.0",
     "dotenv": "^16.4.5",
+    "playwright": "^1.49.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
@@ -25,5 +27,21 @@
     "@types/ws": "^8.5.10",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
-  }
+  },
+  "directories": {
+    "doc": "doc",
+    "test": "tests"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/snakerfor/omi-costom-tts.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "types": "./dist/index.d.ts",
+  "bugs": {
+    "url": "https://github.com/snakerfor/omi-costom-tts/issues"
+  },
+  "homepage": "https://github.com/snakerfor/omi-costom-tts#readme"
 }

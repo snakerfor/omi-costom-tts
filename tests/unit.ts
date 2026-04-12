@@ -9,6 +9,7 @@ import { finalizeConversation } from '../src/services/conversation-finalizer';
 import { AudioFileWriter } from '../src/services/audio-file-writer';
 import { assignLocalSpeakerClusters, findBestMatchFromRows } from '../src/services/speaker-mapper';
 import { alignByOverlap, smoothBoundaryRows } from '../src/services/speaker-alignment';
+import { StreamVadGate } from '../src/services/stream-vad-gate';
 
 async function testValidateConnection(): Promise<void> {
   process.env.ACCESS_TOKENS = 'token-a,token-b';
@@ -275,6 +276,60 @@ function testSpeakerAlignmentSmoothsBoundaryInterjection(): void {
   assert.equal(smoothed[1]?.aligned_speaker, 'SPEAKER_00', 'short weak boundary segment should follow surrounding speaker');
 }
 
+function pcmChunk(sample: number, samples: number): Buffer {
+  const out = Buffer.alloc(samples * 2);
+  for (let i = 0; i < samples; i++) {
+    out.writeInt16LE(sample, i * 2);
+  }
+  return out;
+}
+
+function testStreamVadGateShadowModeStats(): void {
+  const gate = new StreamVadGate({
+    mode: 'shadow',
+    preRollMs: 200,
+    hangoverMs: 400,
+    rmsThreshold: 0.01,
+    peakThreshold: 0.03,
+  });
+
+  gate.processChunk(pcmChunk(0, 3200));
+  gate.processChunk(pcmChunk(4000, 3200));
+  gate.processChunk(pcmChunk(0, 3200));
+
+  const stats = gate.getStatsSnapshot();
+  assert.equal(stats.mode, 'shadow');
+  assert.ok(stats.totalAudioMs > 0, 'shadow mode should accumulate audio time');
+  assert.ok(stats.detectedSpeechMs > 0, 'shadow mode should detect speech');
+  assert.ok(stats.suppressedAudioMs >= 0, 'shadow mode should estimate suppressible silence');
+}
+
+function testStreamVadGateActiveModePreservesPreroll(): void {
+  const gate = new StreamVadGate({
+    mode: 'active',
+    preRollMs: 200,
+    hangoverMs: 200,
+    rmsThreshold: 0.01,
+    peakThreshold: 0.03,
+  });
+
+  const silence = pcmChunk(0, 1600);
+  const speech = pcmChunk(5000, 1600);
+
+  const first = gate.processChunk(silence);
+  assert.equal(first.sendBuffers.length, 0, 'leading silence should be gated in active mode');
+
+  const second = gate.processChunk(speech);
+  assert.equal(second.resumeBeforeSend, true, 'speech start should request resume');
+  assert.equal(second.sendBuffers.length, 2, 'speech start should flush pre-roll plus current chunk');
+
+  const third = gate.processChunk(silence);
+  assert.equal(third.sendBuffers.length, 1, 'hangover should keep a trailing chunk');
+
+  const fourth = gate.processChunk(silence);
+  assert.equal(fourth.pauseAfterSend, true, 'ending hangover should request pause');
+}
+
 async function main(): Promise<void> {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'omi-custom-tts-'));
 
@@ -288,6 +343,8 @@ async function main(): Promise<void> {
     testLocalClusterBridgesShortInterjection();
     testSpeakerAlignmentUsesPyannoteOverlap();
     testSpeakerAlignmentSmoothsBoundaryInterjection();
+    testStreamVadGateShadowModeStats();
+    testStreamVadGateActiveModePreservesPreroll();
     console.log('unit tests passed');
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
