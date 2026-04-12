@@ -330,7 +330,7 @@ export async function extractNewMemories(): Promise<number> {
         status, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    const minConfidence = isAIAvailable() ? 0.6 : 0.35;
+    const minConfidence = 0.75;
 
     db.transaction(() => {
       for (const c of candidates) {
@@ -459,56 +459,30 @@ Rules: same language as content, topics max 5, action_items only if explicit, ra
 }
 
 async function extractMemoryCandidatesAI(conv: any, transcript: string): Promise<any[]> {
-  const prompt = `Extract long-term memory facts from this conversation.
+  const prompt = `Extract ONLY high-value, long-term memory facts from this conversation.
 
 <context>Conversation: ${conv.title || conv.id}, Time: ${conv.started_at}</context>
 <transcript>${transcript.slice(0, 6000)}</transcript>
 
-Extract facts valid beyond today: people, relationships, projects, preferences, habits, recurring tasks.
-Do NOT extract: temporary states, one-time todos, greetings, timestamps.
+STRICT RULES — only extract facts that:
+1. Are SPECIFIC and ACTIONABLE (names, numbers, decisions, tools, relationships)
+2. Will remain true for weeks/months, not just today
+3. Are about the USER or people the user knows — not generic knowledge
+4. Each fact must be DISTINCT — do not repeat the same information in different words
 
-Return JSON array: [{"candidate_text":"...","category":"person|relationship|project|preference|habit|work_context|recurring_task|fact","confidence":0.0-1.0,"evidence":"...","why_long_term":"..."}]
+Do NOT extract: generic facts anyone could Google, temporary states, vague descriptions, repository stats, greetings, OCR artifacts.
+
+QUALITY OVER QUANTITY: Return 0-5 items max. Only return items with confidence >= 0.75.
+
+Return JSON array: [{"candidate_text":"specific fact about user","category":"person|relationship|project|preference|habit|work_context|recurring_task|fact","confidence":0.75-1.0,"evidence":"brief quote","why_long_term":"reason"}]
 If nothing qualifies, return []. Raw JSON only.`;
 
-  const text = await chatCompletion(prompt, { temperature: 0.2, maxTokens: 2048 });
+  const text = await chatCompletion(prompt, { temperature: 0.2, maxTokens: 4096 });
   const arr = parseJSON<any[]>(text);
   if (!Array.isArray(arr)) return [];
-  return arr.filter((c: any) => c.candidate_text && c.category && typeof c.confidence === 'number');
+  return arr.filter((c: any) => c.candidate_text && c.category && typeof c.confidence === 'number' && c.confidence >= 0.75);
 }
 
-function extractMemoryCandidatesRules(conv: any): any[] {
-  const candidates: any[] = [];
-  if (conv.participants_json) {
-    try {
-      const speakers = JSON.parse(conv.participants_json);
-      if (Array.isArray(speakers)) {
-        for (const s of speakers) {
-          if (s && s !== '?' && !/^\d+$/.test(s)) {
-            candidates.push({
-              candidate_text: `${s} appeared in a conversation on ${conv.started_at.slice(0, 10)}`,
-              category: 'person', confidence: 0.5,
-              evidence: `conversation ${conv.id}`, why_long_term: 'person identification',
-            });
-          }
-        }
-      }
-    } catch {}
-  }
-  if (conv.topics_json) {
-    try {
-      const topics = JSON.parse(conv.topics_json);
-      if (Array.isArray(topics)) {
-        for (const t of topics) {
-          if (typeof t === 'string' && t.length > 3) {
-            candidates.push({
-              candidate_text: `Topic discussed: ${t}`,
-              category: 'work_context', confidence: 0.4,
-              evidence: `conversation ${conv.id}`, why_long_term: 'recurring topic',
-            });
-          }
-        }
-      }
-    } catch {}
-  }
-  return candidates;
+function extractMemoryCandidatesRules(_conv: any): any[] {
+  return [];
 }

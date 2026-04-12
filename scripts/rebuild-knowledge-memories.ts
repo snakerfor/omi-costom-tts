@@ -73,71 +73,14 @@ async function nominateCandidatesForConversation(conv: Conversation): Promise<Ca
 
 // ─── Rule-based extraction (no AI) ───
 
-function extractCandidatesByRules(conv: Conversation, textParts: string[]): CandidateFromAI[] {
-  const candidates: CandidateFromAI[] = [];
-  const fullText = textParts.join('\n');
-
-  if (conv.participants_json) {
-    try {
-      const speakers = JSON.parse(conv.participants_json);
-      if (Array.isArray(speakers)) {
-        for (const s of speakers) {
-          if (s && s !== '?' && !/^\d+$/.test(s)) {
-            candidates.push({
-              candidate_text: `${s} appeared in a conversation on ${conv.started_at.slice(0, 10)}`,
-              category: 'person',
-              confidence: 0.5,
-              evidence: `conversation ${conv.id}`,
-              why_long_term: 'person identification from conversation',
-            });
-          }
-        }
-      }
-    } catch {}
-  }
-
-  if (conv.topics_json) {
-    try {
-      const topics = JSON.parse(conv.topics_json);
-      if (Array.isArray(topics)) {
-        for (const t of topics) {
-          if (typeof t === 'string' && t.length > 3) {
-            candidates.push({
-              candidate_text: `Topic discussed: ${t}`,
-              category: 'work_context',
-              confidence: 0.4,
-              evidence: `conversation ${conv.id}`,
-              why_long_term: 'recurring topic from conversation',
-            });
-          }
-        }
-      }
-    } catch {}
-  }
-
-  const projectPatterns = [
-    /项目|project|工程|开发|上线|部署|deploy/i,
-  ];
-  if (projectPatterns.some(p => p.test(fullText))) {
-    const firstLine = textParts.find(t => projectPatterns.some(p => p.test(t)));
-    if (firstLine) {
-      candidates.push({
-        candidate_text: `Project-related discussion: ${firstLine.slice(0, 100)}`,
-        category: 'project',
-        confidence: 0.4,
-        evidence: `conversation ${conv.id}`,
-        why_long_term: 'project context',
-      });
-    }
-  }
-
-  return candidates;
+function extractCandidatesByRules(_conv: Conversation, _textParts: string[]): CandidateFromAI[] {
+  return [];
 }
 
 // ─── AI-based extraction (MiniMax) ───
 
 async function extractCandidatesByAI(conv: Conversation, transcript: string): Promise<CandidateFromAI[]> {
-  const prompt = `Extract long-term memory facts from this conversation transcript.
+  const prompt = `Extract ONLY high-value, long-term memory facts from this conversation.
 
 <context>
 Conversation: ${conv.title || conv.id}
@@ -148,22 +91,31 @@ Time: ${conv.started_at}
 ${transcript.slice(0, 6000)}
 </transcript>
 
-Extract facts that remain true beyond today: people identities, relationships, projects, preferences, habits, recurring tasks.
+STRICT RULES — only extract facts that:
+1. Are SPECIFIC and ACTIONABLE (names, numbers, decisions, tools, relationships)
+2. Will remain true for weeks/months, not just today
+3. Are about the USER or people the user knows — not generic knowledge
+4. Each fact must be DISTINCT — do not repeat the same information in different words
 
 Do NOT extract:
-- Temporary states or moods
-- One-time todo items
-- Greetings or small talk
-- Timestamps
+- Generic facts anyone could Google (e.g. "X is an open-source project on GitHub")
+- Temporary states, moods, or one-time events
+- Vague descriptions (e.g. "discussed technical topics")
+- Repository stats (stars, forks, releases)
+- Greetings, small talk, casual chatter
+- Software license information
+- OCR artifacts or garbled text
+
+QUALITY OVER QUANTITY: Return 0-5 items max. Most conversations should return 0-2 items. Only return items with confidence >= 0.75.
 
 Return a JSON array:
 [
   {
-    "candidate_text": "the factual statement",
+    "candidate_text": "specific factual statement about the user or their world",
     "category": "person|relationship|project|preference|habit|work_context|recurring_task|fact",
-    "confidence": 0.0-1.0,
-    "evidence": "quote or reference from transcript",
-    "why_long_term": "reason this is long-term valid"
+    "confidence": 0.75-1.0,
+    "evidence": "brief quote from transcript",
+    "why_long_term": "why this matters long-term"
   }
 ]
 
@@ -226,7 +178,7 @@ function persistCandidates(convId: string, candidates: CandidateFromAI[]): numbe
 // ─── Step 3: Promote high-confidence candidates to formal memories ───
 
 function promoteToMemories(): number {
-  const minConfidence = isAIAvailable() ? 0.6 : 0.35;
+  const minConfidence = 0.75;
 
   const candidates = db.prepare(`
     SELECT id, candidate_text, category, confidence, conversation_id, created_at
