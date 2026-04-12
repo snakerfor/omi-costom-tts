@@ -11,6 +11,7 @@ import { finalizeConversation } from '../services/conversation-finalizer';
 import { db } from '../db';
 import { mapSpeakersForConversation } from '../services/speaker-mapper';
 import { alignConversationSpeakers } from '../services/speaker-alignment';
+import { StreamVadGate } from '../services/stream-vad-gate';
 
 function shouldRunSpeakerIdentityMapping(): boolean {
   return process.env.ENABLE_SPEAKER_IDENTITY_MAPPING === 'true';
@@ -37,6 +38,23 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   let wavFinalized = false; // Prevent double-finalize
   let finalizeStarted = false;
   let firstAudioFrameAt: string | null = null;
+  let sonioxPausedByVad = false;
+  let lastAudioPacketAtMs = Date.now();
+  let accumulatedSilenceMs = 0;
+  let idleWatchdog: NodeJS.Timeout | null = null;
+  const vadGate = new StreamVadGate({
+    mode: process.env.STREAM_VAD_MODE,
+    sampleRate: 16000,
+    channels: 1,
+    bytesPerSample: 2,
+    rmsThreshold: Number(process.env.STREAM_VAD_RMS_THRESHOLD ?? 0.015),
+    peakThreshold: Number(process.env.STREAM_VAD_PEAK_THRESHOLD ?? 0.055),
+    preRollMs: Number(process.env.STREAM_VAD_PRE_ROLL_MS ?? 300),
+    hangoverMs: Number(process.env.STREAM_VAD_HANGOVER_MS ?? 2200),
+  });
+  const streamSilenceFinalizeMs = Number(process.env.STREAM_SILENCE_FINALIZE_MS ?? 0);
+  const streamNoAudioFinalizeMs = Number(process.env.STREAM_NO_AUDIO_FINALIZE_MS ?? 0);
+  const streamIdleFinalizeMs = Number(process.env.STREAM_IDLE_FINALIZE_MS ?? 0);
 
   // Audio file writer - saves WAV with RIFF header
   const AUDIO_DIR = path.join(process.cwd(), 'audio-uploads');
@@ -119,6 +137,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       const durationMs = segmentsForStorage.length
         ? Math.max(...segmentsForStorage.map(seg => seg.end_ms))
         : 0;
+      const vadStats = vadGate.getStatsSnapshot();
 
       const tx = db.transaction(() => {
         db.prepare(`
@@ -175,7 +194,9 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
 
         db.prepare(`
           UPDATE conversations
-          SET status = ?, first_audio_frame_at = ?, ended_at = ?, raw_result_path = ?, updated_at = ?, error_message = NULL
+          SET status = ?, first_audio_frame_at = ?, ended_at = ?, raw_result_path = ?, updated_at = ?, error_message = NULL,
+              vad_mode = ?, vad_total_audio_ms = ?, vad_detected_speech_ms = ?, vad_detected_silence_ms = ?,
+              vad_sent_audio_ms = ?, vad_suppressed_audio_ms = ?, vad_state_transitions = ?
           WHERE id = ?
         `).run(
           'completed',
@@ -183,6 +204,13 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
           now,
           finalized.outPath,
           now,
+          vadStats.mode,
+          vadStats.totalAudioMs,
+          vadStats.detectedSpeechMs,
+          vadStats.detectedSilenceMs,
+          vadStats.sentAudioMs,
+          vadStats.suppressedAudioMs,
+          vadStats.stateTransitions,
           conversationId,
         );
       });
@@ -196,25 +224,71 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       }
 
       console.log(
-        `[Finalize] session=${sessionId}, reason=${reason}, output=${finalized.outPath}, segments=${segmentsForStorage.length}, alignment=${aligned.alignmentOutputPath || 'disabled'}, identity_mapping=${shouldRunSpeakerIdentityMapping() ? 'enabled' : 'disabled'}`,
+        `[Finalize] session=${sessionId}, reason=${reason}, output=${finalized.outPath}, segments=${segmentsForStorage.length}, alignment=${aligned.alignmentOutputPath || 'disabled'}, identity_mapping=${shouldRunSpeakerIdentityMapping() ? 'enabled' : 'disabled'}, vad_mode=${vadStats.mode}, vad_total_ms=${vadStats.totalAudioMs}, vad_speech_ms=${vadStats.detectedSpeechMs}, vad_sent_ms=${vadStats.sentAudioMs}, vad_suppressed_ms=${vadStats.suppressedAudioMs}`,
       );
     } catch (err) {
       console.error('[Finalize] failed:', err);
       try {
+        const vadStats = vadGate.getStatsSnapshot();
         db.prepare(`
           UPDATE conversations
-          SET status = ?, ended_at = ?, error_message = ?, updated_at = ?
+          SET status = ?, ended_at = ?, error_message = ?, updated_at = ?,
+              vad_mode = ?, vad_total_audio_ms = ?, vad_detected_speech_ms = ?, vad_detected_silence_ms = ?,
+              vad_sent_audio_ms = ?, vad_suppressed_audio_ms = ?, vad_state_transitions = ?
           WHERE id = ?
         `).run(
           'failed',
           new Date().toISOString(),
           String((err as Error)?.message ?? err),
           new Date().toISOString(),
+          vadStats.mode,
+          vadStats.totalAudioMs,
+          vadStats.detectedSpeechMs,
+          vadStats.detectedSilenceMs,
+          vadStats.sentAudioMs,
+          vadStats.suppressedAudioMs,
+          vadStats.stateTransitions,
           conversationId,
         );
       } catch (dbErr) {
         console.error('[DB] failed to mark conversation failed:', dbErr);
       }
+    }
+  }
+
+  function clearIdleWatchdog(): void {
+    if (idleWatchdog) {
+      clearInterval(idleWatchdog);
+      idleWatchdog = null;
+    }
+  }
+
+  function chunkDurationMs(data: Buffer): number {
+    // PCM s16le mono 16k
+    return Math.round((data.length / 2 / 16000) * 1000);
+  }
+
+  function finalizeByTimeout(reason: string): void {
+    if (finalizeStarted) {
+      return;
+    }
+    console.log(`[SessionTimeout] session=${sessionId}, reason=${reason}`);
+
+    const seg = builder.flushPending();
+    if (seg) {
+      ws.send(JSON.stringify({ segments: [seg] }));
+    }
+
+    stopAcceptingAudio();
+    void sonioxSession?.finish().catch(err => {
+      console.warn('[Soniox] finish failed during timeout finalize:', String((err as Error)?.message ?? err));
+    });
+    void finalizeOnce('ws_close');
+
+    try {
+      ws.close(4000, reason);
+    } catch {
+      // Ignore close failure.
     }
   }
 
@@ -233,6 +307,41 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     } catch (err) {
       stopAcceptingAudio();
       console.warn('[Soniox] sendAudio skipped after session stopped:', String((err as Error)?.message ?? err));
+    }
+  }
+
+  function applyVadDecision(audioData: Buffer): void {
+    const decision = vadGate.processChunk(audioData);
+    const durationMs = chunkDurationMs(audioData);
+    const inSpeech = vadGate.getStatsSnapshot().currentlyInSpeech;
+
+    if (decision.isSpeech || inSpeech) {
+      accumulatedSilenceMs = 0;
+    } else {
+      accumulatedSilenceMs += durationMs;
+    }
+
+    if (decision.resumeBeforeSend && sonioxSession && sonioxConnected && sonioxAcceptingAudio && sonioxPausedByVad) {
+      sonioxSession.resume();
+      sonioxPausedByVad = false;
+    }
+
+    for (const buffer of decision.sendBuffers) {
+      sendAudioToSoniox(buffer);
+    }
+
+    if (decision.pauseAfterSend && sonioxSession && sonioxConnected && sonioxAcceptingAudio && !sonioxPausedByVad) {
+      sonioxSession.pause();
+      sonioxPausedByVad = true;
+    }
+
+    if (
+      streamSilenceFinalizeMs > 0 &&
+      vadGate.getMode() === 'active' &&
+      accumulatedSilenceMs >= streamSilenceFinalizeMs &&
+      !finalizeStarted
+    ) {
+      finalizeByTimeout(`silence_timeout_${streamSilenceFinalizeMs}ms`);
     }
   }
 
@@ -306,9 +415,14 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     sonioxConnected = true;
     sonioxAcceptingAudio = true;
 
-    // Process queued audio - direct PCM send
+    if (vadGate.wantsStreamPaused()) {
+      sonioxSession?.pause();
+      sonioxPausedByVad = true;
+    }
+
+    // Process queued audio through VAD gate so ordering and pre-roll remain intact.
     for (const audioData of audioQueue) {
-      sendAudioToSoniox(audioData);
+      applyVadDecision(audioData);
     }
     audioQueue = [];
 
@@ -335,6 +449,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   ws.on('message', (data, isBinary) => {
     if (isBinary) {
       const audioData = data as Buffer;
+      lastAudioPacketAtMs = Date.now();
       if (!firstAudioFrameAt) {
         firstAudioFrameAt = new Date().toISOString();
       }
@@ -342,10 +457,9 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       wavWriter.write(audioData);
 
       if (sonioxConnected && sonioxAcceptingAudio && sonioxSession) {
-        // OMI APP sends PCM s16le directly - no decoding needed
-        sendAudioToSoniox(audioData);
+        applyVadDecision(audioData);
       } else if (!finalizeStarted) {
-        // Queue while waiting for Soniox
+        // Queue raw chunks so VAD can replay them in-order once Soniox is connected.
         audioQueue.push(audioData);
       }
     } else {
@@ -384,10 +498,26 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     } catch {
       // Ignore
     }
+    clearIdleWatchdog();
     void finalizeOnce('ws_close');
   });
 
   ws.on('error', (err: Error) => {
     console.error('[APP] WebSocket error:', err);
   });
+
+  idleWatchdog = setInterval(() => {
+    if (finalizeStarted) {
+      return;
+    }
+    const nowMs = Date.now();
+    const idleMs = nowMs - lastAudioPacketAtMs;
+    if (!firstAudioFrameAt && streamNoAudioFinalizeMs > 0 && idleMs >= streamNoAudioFinalizeMs) {
+      finalizeByTimeout(`no_audio_timeout_${streamNoAudioFinalizeMs}ms`);
+      return;
+    }
+    if (firstAudioFrameAt && streamIdleFinalizeMs > 0 && idleMs >= streamIdleFinalizeMs) {
+      finalizeByTimeout(`idle_timeout_${streamIdleFinalizeMs}ms`);
+    }
+  }, 5000);
 }
