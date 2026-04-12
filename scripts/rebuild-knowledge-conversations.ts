@@ -249,7 +249,7 @@ Rules:
 - Return raw JSON only, no markdown fences`;
 
   try {
-    const text = await chatCompletion(prompt, { temperature: 0.3, maxTokens: 1024 });
+    const text = await chatCompletion(prompt, { temperature: 0.3, maxTokens: 4096 });
     const parsed = parseJSON(text);
     return {
       title: parsed.title || '',

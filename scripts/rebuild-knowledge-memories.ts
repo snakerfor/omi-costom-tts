@@ -170,7 +170,7 @@ Return a JSON array:
 If nothing qualifies, return []. Return raw JSON only, no markdown.`;
 
   try {
-    const text = await chatCompletion(prompt, { temperature: 0.2, maxTokens: 2048 });
+    const text = await chatCompletion(prompt, { temperature: 0.2, maxTokens: 4096 });
     const arr = parseJSON<any[]>(text);
     if (!Array.isArray(arr)) return [];
     return arr.filter((c: any) =>
@@ -350,12 +350,16 @@ async function main(): Promise<void> {
   console.log(`[memories] processing ${conversations.length} conversations`);
 
   let totalCandidates = 0;
-  for (const conv of conversations) {
+  for (let i = 0; i < conversations.length; i++) {
+    const conv = conversations[i];
+    const tag = `[${i + 1}/${conversations.length}]`;
     const candidates = await nominateCandidatesForConversation(conv);
     if (candidates.length) {
       const inserted = db.transaction(() => persistCandidates(conv.id, candidates))();
-      console.log(`  ${conv.id}: ${candidates.length} candidates → ${inserted} new`);
+      console.log(`${tag} ${conv.title || conv.id}: ${candidates.length} candidates → ${inserted} new`);
       totalCandidates += candidates.length;
+    } else {
+      console.log(`${tag} ${conv.title || conv.id}: no candidates`);
     }
   }
 
