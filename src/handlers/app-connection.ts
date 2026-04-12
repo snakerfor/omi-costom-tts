@@ -13,6 +13,7 @@ import { db } from '../db';
 import { mapSpeakersForConversation } from '../services/speaker-mapper';
 import { alignConversationSpeakers } from '../services/speaker-alignment';
 import { StreamVadGate } from '../services/stream-vad-gate';
+import { syncConversationSegments } from '../services/knowledge-ingest';
 
 function shouldRunSpeakerIdentityMapping(): boolean {
   return process.env.ENABLE_SPEAKER_IDENTITY_MAPPING === 'true';
@@ -250,6 +251,15 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       });
 
       tx();
+
+      try {
+        const synced = syncConversationSegments(conversationId);
+        if (synced > 0) {
+          console.log(`[knowledge] incremental sync: ${synced} events from conversation ${conversationId}`);
+        }
+      } catch (err) {
+        console.error('[knowledge] incremental sync failed:', err);
+      }
 
       if (shouldRunSpeakerIdentityMapping()) {
         void mapSpeakersForConversation(conversationId).catch(err => {

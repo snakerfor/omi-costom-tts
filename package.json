@@ -11,6 +11,11 @@
     "test:unit": "ts-node tests/unit.ts",
     "test:pcm": "ts-node tests/test-with-pcm.ts",
     "rebuild:native": "npm rebuild better-sqlite3",
+    "rebuild:knowledge": "ts-node scripts/rebuild-knowledge-events.ts",
+    "rebuild:conversations": "ts-node scripts/rebuild-knowledge-conversations.ts",
+    "rebuild:memories": "ts-node scripts/rebuild-knowledge-memories.ts",
+    "rebuild:all-knowledge": "ts-node scripts/rebuild-knowledge-events.ts && ts-node scripts/rebuild-knowledge-conversations.ts && ts-node scripts/rebuild-knowledge-memories.ts",
+    "omimem": "ts-node scripts/omimem.ts",
     "generate:pcm": "ffmpeg -i tests/test.m4a -f s16le -ar 16000 -ac 1 tests/test.pcm"
   },
   "dependencies": {

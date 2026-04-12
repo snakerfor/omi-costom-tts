@@ -238,6 +238,79 @@ export function initDb(): void {
       metadata_summary_json TEXT,
       notes TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS knowledge_conversations (
+      id TEXT PRIMARY KEY,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      primary_source TEXT NOT NULL,
+      source_refs_json TEXT NOT NULL,
+      participants_json TEXT,
+      title TEXT,
+      summary TEXT,
+      topics_json TEXT,
+      action_items_json TEXT,
+      quality_score REAL,
+      review_status TEXT NOT NULL DEFAULT 'draft',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS knowledge_conversation_items (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      event_id TEXT NOT NULL,
+      item_order INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS knowledge_memory_candidates (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      candidate_text TEXT NOT NULL,
+      category TEXT NOT NULL,
+      confidence REAL,
+      evidence_json TEXT,
+      dedupe_key TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS knowledge_memories (
+      id TEXT PRIMARY KEY,
+      canonical_text TEXT NOT NULL,
+      category TEXT NOT NULL,
+      subject_key TEXT,
+      confidence REAL,
+      source_refs_json TEXT NOT NULL,
+      first_observed_at TEXT,
+      last_observed_at TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS knowledge_events (
+      id TEXT PRIMARY KEY,
+      source_type TEXT NOT NULL,
+      source_table TEXT NOT NULL,
+      source_row_id TEXT NOT NULL,
+      source_key TEXT,
+      session_ref TEXT,
+      conversation_ref TEXT,
+      event_type TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      content_text TEXT,
+      title TEXT,
+      participants_json TEXT,
+      metadata_json TEXT,
+      quality_score REAL,
+      dedupe_key TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
 
   addColumnIfMissing('speakers', 'identity_label', 'TEXT');
@@ -274,6 +347,24 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_omi_screenshots_video_chunk_path ON omi_screenshots(video_chunk_path);
     CREATE INDEX IF NOT EXISTS idx_omi_transcription_segments_session_id ON omi_transcription_segments(source_session_id);
     CREATE INDEX IF NOT EXISTS idx_omi_memories_backend_id ON omi_memories(backend_id);
+
+    CREATE INDEX IF NOT EXISTS idx_knowledge_conversations_started_at ON knowledge_conversations(started_at);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_conversations_review_status ON knowledge_conversations(review_status);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_conversation_items_conversation_id ON knowledge_conversation_items(conversation_id);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_conversation_items_event_id ON knowledge_conversation_items(event_id);
+
+    CREATE INDEX IF NOT EXISTS idx_knowledge_memory_candidates_conversation_id ON knowledge_memory_candidates(conversation_id);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_memory_candidates_status ON knowledge_memory_candidates(status);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_memory_candidates_dedupe_key ON knowledge_memory_candidates(dedupe_key);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_memories_category ON knowledge_memories(category);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_memories_subject_key ON knowledge_memories(subject_key);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_memories_status ON knowledge_memories(status);
+
+    CREATE INDEX IF NOT EXISTS idx_knowledge_events_started_at ON knowledge_events(started_at);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_events_event_type ON knowledge_events(event_type);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_events_session_ref ON knowledge_events(session_ref);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_events_conversation_ref ON knowledge_events(conversation_ref);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_events_dedupe_key ON knowledge_events(dedupe_key);
   `);
 
   recoverDanglingRecordingConversations();

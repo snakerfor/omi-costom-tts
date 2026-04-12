@@ -21,6 +21,7 @@ import { AudioFileWriter } from './services/audio-file-writer';
 import { parseNumber, readJsonBody, sendJson } from './utils/http';
 import { IDENTITY_OPTIONS } from './constants/identity-options';
 import { ingestMetadata, storeVideoChunk, verifySyncToken } from './services/omi-sync-service';
+import { startKnowledgeScheduler, stopKnowledgeScheduler } from './services/knowledge-ingest';
 
 const PORT = parseInt(process.env.PORT ?? '8080', 10);
 
@@ -415,10 +416,12 @@ server.listen(PORT, () => {
   console.log(`[Server] WebSocket endpoint: ws://localhost:${PORT}/stt`);
   console.log(`[Server] Health check: http://localhost:${PORT}/healthz`);
   console.log(`[Server] Admin UI: http://localhost:${PORT}/admin`);
+  startKnowledgeScheduler();
 });
 
 process.on('SIGTERM', () => {
   console.log('[Server] SIGTERM received, shutting down...');
+  stopKnowledgeScheduler();
   wss.close();
   server.close();
   process.exit(0);

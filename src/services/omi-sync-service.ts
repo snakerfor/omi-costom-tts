@@ -2,6 +2,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { db } from '../db';
+import { syncOmiMetadataBatch } from './knowledge-ingest';
 
 export type OmiEntityName =
   | 'screenshots'
@@ -293,6 +294,18 @@ export function ingestMetadata(payload: OmiMetadataPayload): Record<string, unkn
   });
 
   tx();
+
+  try {
+    const ingestedEntities = Object.keys(summary).filter(k => (summary[k] ?? 0) > 0);
+    if (ingestedEntities.length) {
+      const synced = syncOmiMetadataBatch(payload.sourceKey, ingestedEntities);
+      if (synced > 0) {
+        console.log(`[knowledge] incremental sync: ${synced} new events from omi-sync`);
+      }
+    }
+  } catch (err) {
+    console.error('[knowledge] incremental sync failed:', err);
+  }
 
   return {
     runId,
