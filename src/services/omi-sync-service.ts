@@ -174,6 +174,7 @@ function upsertTranscriptionSegment(sourceKey: string, row: OmiPayloadRow): void
 
 function upsertObservation(sourceKey: string, row: OmiPayloadRow): void {
   const now = nowIso();
+  const originalCreatedAt = row.createdAt ? String(row.createdAt) : now;
   db.prepare(`
     INSERT INTO omi_observations (
       id, source_key, source_observation_id, source_screenshot_id, app_name, context_summary,
@@ -199,7 +200,7 @@ function upsertObservation(sourceKey: string, row: OmiPayloadRow): void {
     row.hasTask ? 1 : 0,
     row.taskTitle == null ? null : String(row.taskTitle),
     JSON.stringify(row),
-    now,
+    originalCreatedAt,
     now,
   );
 }

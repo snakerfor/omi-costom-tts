@@ -252,7 +252,8 @@ function importObservations(): number {
     SELECT
       id, source_key, source_screenshot_id,
       app_name, context_summary, current_activity,
-      has_task, task_title, created_at AS obs_created_at
+      has_task, task_title, created_at AS obs_created_at,
+      raw_payload_json
     FROM omi_observations
   `).all() as Array<{
     id: string;
@@ -264,6 +265,7 @@ function importObservations(): number {
     has_task: number;
     task_title: string | null;
     obs_created_at: string;
+    raw_payload_json: string | null;
   }>;
 
   const insert = db.prepare(`
@@ -279,7 +281,6 @@ function importObservations(): number {
   const now = new Date().toISOString();
   let count = 0;
 
-  // observation 自身没有精确时间戳，尝试从关联 screenshot 取 ts
   const screenshotTsLookup = new Map<number, string>();
   if (rows.some(r => r.source_screenshot_id != null)) {
     const ssRows = db.prepare(`
@@ -291,9 +292,17 @@ function importObservations(): number {
   }
 
   for (const row of rows) {
+    let originalCreatedAt = row.obs_created_at;
+    if (row.raw_payload_json) {
+      try {
+        const payload = JSON.parse(row.raw_payload_json);
+        if (payload.createdAt) originalCreatedAt = String(payload.createdAt);
+      } catch {}
+    }
+
     const startedAt = (row.source_screenshot_id != null
       ? screenshotTsLookup.get(row.source_screenshot_id)
-      : null) || row.obs_created_at;
+      : null) || originalCreatedAt;
 
     const contentParts = [
       row.context_summary,

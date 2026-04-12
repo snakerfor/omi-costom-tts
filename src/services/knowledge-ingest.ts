@@ -134,14 +134,22 @@ export function syncOmiMetadataBatch(sourceKey: string, entities: string[]): num
 
     const rows = db.prepare(`
       SELECT id, source_key, source_screenshot_id, app_name, context_summary,
-             current_activity, has_task, task_title, created_at AS obs_created_at
+             current_activity, has_task, task_title, created_at AS obs_created_at,
+             raw_payload_json
       FROM omi_observations
       WHERE source_key = ?
         AND NOT EXISTS (SELECT 1 FROM knowledge_events WHERE dedupe_key = 'observation:' || id)
     `).all(sourceKey) as any[];
 
     for (const row of rows) {
-      const startedAt = (row.source_screenshot_id != null ? screenshotTsLookup.get(row.source_screenshot_id) : null) || row.obs_created_at;
+      let originalCreatedAt = row.obs_created_at;
+      if (row.raw_payload_json) {
+        try {
+          const payload = JSON.parse(row.raw_payload_json);
+          if (payload.createdAt) originalCreatedAt = String(payload.createdAt);
+        } catch {}
+      }
+      const startedAt = (row.source_screenshot_id != null ? screenshotTsLookup.get(row.source_screenshot_id) : null) || originalCreatedAt;
       const contentParts = [row.context_summary, row.current_activity, row.task_title ? `[task] ${row.task_title}` : null].filter(Boolean);
       const metadata = JSON.stringify({ app_name: row.app_name, has_task: row.has_task === 1, source_screenshot_id: row.source_screenshot_id });
 
