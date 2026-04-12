@@ -54,7 +54,7 @@ export async function chatCompletion(prompt: string, options?: {
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30_000);
+  const timeout = setTimeout(() => controller.abort(), 60_000);
 
   let resp: Response;
   try {
