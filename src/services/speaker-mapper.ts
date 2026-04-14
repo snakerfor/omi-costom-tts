@@ -4,6 +4,7 @@ import { cosineSimilarity } from '../utils/similarity';
 import { clipAudioSegment } from './audio-clipper';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import { clipsDir } from '../runtime-paths';
 
 function genId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -358,7 +359,6 @@ async function buildClipPaths(conversationId: string, speakerLabel: string, rows
   const sourceAudio = conv?.audio_file_path;
   if (!sourceAudio) return [];
 
-  const clipsDir = path.join(process.cwd(), 'data', 'clips');
   await fs.mkdir(clipsDir, { recursive: true });
 
   const candidates = pickCandidateSegments(rows);

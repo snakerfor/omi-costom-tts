@@ -29,8 +29,18 @@ import { parseNumber, readJsonBody, sendJson } from './utils/http';
 import { IDENTITY_OPTIONS } from './constants/identity-options';
 import { ingestMetadata, storeVideoChunk, verifySyncToken } from './services/omi-sync-service';
 import { startKnowledgeScheduler, stopKnowledgeScheduler } from './services/knowledge-ingest';
+import {
+  adminDir,
+  appRoot,
+  audioUploadsDir,
+  clipsDir,
+  dataRoot,
+  finalizedResultsDir,
+  previewStaticDir,
+  rawResultsDir,
+} from './runtime-paths';
 
-const PORT = parseInt(process.env.PORT ?? '8080', 10);
+const PORT = parseInt(process.env.PORT ?? '28089', 10);
 
 initDb();
 
@@ -41,20 +51,18 @@ if (!(globalThis as any).WebSocket) {
 console.log('[Boot] globalThis.WebSocket =', typeof (globalThis as any).WebSocket);
 console.log('[Boot] marker = soniox-ws-fix');
 console.log('[Boot] DB path =', dbPath, process.env.DB_PATH ? '(from DB_PATH)' : '(default)');
+console.log('[Boot] app root =', appRoot);
+console.log('[Boot] data root =', dataRoot);
 
-const AUDIO_DIR = path.join(process.cwd(), 'audio-uploads');
-const PUBLIC_DIR = path.join(process.cwd(), 'public');
-const ADMIN_DIR = path.join(PUBLIC_DIR, 'admin');
-const PREVIEW_DIR = path.join(PUBLIC_DIR, 'preview');
 const MEDIA_ROOTS: Record<string, string> = {
-  audio: path.join(process.cwd(), 'audio-uploads'),
-  clips: path.join(process.cwd(), 'data', 'clips'),
-  finalized: path.join(process.cwd(), 'finalized_results'),
-  raw: path.join(process.cwd(), 'raw_results'),
+  audio: audioUploadsDir,
+  clips: clipsDir,
+  finalized: finalizedResultsDir,
+  raw: rawResultsDir,
 };
 
-if (!fs.existsSync(AUDIO_DIR)) {
-  fs.mkdirSync(AUDIO_DIR, { recursive: true });
+if (!fs.existsSync(audioUploadsDir)) {
+  fs.mkdirSync(audioUploadsDir, { recursive: true });
 }
 
 function isSafeChildPath(baseDir: string, targetPath: string): boolean {
@@ -105,8 +113,8 @@ function serveFile(res: ServerResponse, filePath: string): void {
 
 function serveAdminAsset(reqPath: string, res: ServerResponse): boolean {
   const relative = reqPath === '/admin' || reqPath === '/admin/' ? 'index.html' : reqPath.replace(/^\/admin\//, '');
-  const target = path.resolve(ADMIN_DIR, relative);
-  if (!isSafeChildPath(ADMIN_DIR, target) && target !== path.resolve(ADMIN_DIR, 'index.html')) {
+  const target = path.resolve(adminDir, relative);
+  if (!isSafeChildPath(adminDir, target) && target !== path.resolve(adminDir, 'index.html')) {
     sendJson(res, 403, { ok: false, error: 'Forbidden' });
     return true;
   }
@@ -120,8 +128,8 @@ function serveAdminAsset(reqPath: string, res: ServerResponse): boolean {
 
 function servePreviewAsset(reqPath: string, res: ServerResponse): boolean {
   const relative = reqPath === '/preview' || reqPath === '/preview/' ? 'index.html' : reqPath.replace(/^\/preview\//, '');
-  const target = path.resolve(PREVIEW_DIR, relative);
-  if (!isSafeChildPath(PREVIEW_DIR, target) && target !== path.resolve(PREVIEW_DIR, 'index.html')) {
+  const target = path.resolve(previewStaticDir, relative);
+  if (!isSafeChildPath(previewStaticDir, target) && target !== path.resolve(previewStaticDir, 'index.html')) {
     sendJson(res, 403, { ok: false, error: 'Forbidden' });
     return true;
   }
@@ -368,7 +376,7 @@ const server = createServer((req, res) => {
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const filename = `audio_${uid}_${timestamp}.wav`;
-      const filepath = path.join(AUDIO_DIR, filename);
+      const filepath = path.join(audioUploadsDir, filename);
       const wavWriter = new AudioFileWriter(filepath, {
         sampleRate: parseInt(sampleRate, 10),
         channels: 1,

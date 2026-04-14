@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { db } from '../db';
 import { syncOmiMetadataBatch } from './knowledge-ingest';
+import { omiSyncVideoRoot } from '../runtime-paths';
 
 export type OmiEntityName =
   | 'screenshots'
@@ -33,8 +34,6 @@ const ENTITY_TABLES: Record<OmiEntityName, string> = {
   observations: 'omi_observations',
   memories: 'omi_memories',
 };
-
-const VIDEO_ROOT = process.env.OMI_SYNC_VIDEO_ROOT ?? path.join(process.cwd(), 'data', 'omi-videos');
 
 function genId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -322,7 +321,7 @@ export function storeVideoChunk(request: VideoUploadRequest, body: Buffer): Reco
     .split(/[\\/]+/)
     .filter(Boolean)
     .join(path.sep);
-  const targetPath = path.join(VIDEO_ROOT, request.sourceKey, safeRelativePath);
+  const targetPath = path.join(omiSyncVideoRoot, request.sourceKey, safeRelativePath);
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
   fs.writeFileSync(targetPath, body);
 

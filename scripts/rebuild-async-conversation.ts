@@ -7,6 +7,7 @@ import { finalizeConversation } from '../src/services/conversation-finalizer';
 import { mapSpeakersForConversation } from '../src/services/speaker-mapper';
 import { alignConversationSpeakers } from '../src/services/speaker-alignment';
 import { SonioxToken } from '../src/types';
+import { audioUploadsDir, finalizedResultsDir, rawResultsDir } from '../src/runtime-paths';
 
 function shouldRunSpeakerIdentityMapping(): boolean {
   return process.env.ENABLE_SPEAKER_IDENTITY_MAPPING === 'true';
@@ -61,9 +62,6 @@ async function main(): Promise<void> {
   const audioPath = requireArg('audio-path');
   const sourceSessionId = requireArg('source-session-id');
   const sessionId = `${sourceSessionId}_async_${Date.now().toString(36)}`;
-  const finalDir = path.join(process.cwd(), 'finalized_results');
-  const rawDir = path.join(process.cwd(), 'raw_results');
-  const audioUploadsDir = path.join(process.cwd(), 'audio-uploads');
 
   const apiKey = process.env.SONIOX_API_KEY;
   if (!apiKey) {
@@ -116,8 +114,8 @@ async function main(): Promise<void> {
     throw new Error('transcription returned no tokens');
   }
 
-  await fs.mkdir(rawDir, { recursive: true });
-  const rawTranscriptPath = path.join(rawDir, `${sessionId}.ndjson`);
+  await fs.mkdir(rawResultsDir, { recursive: true });
+  const rawTranscriptPath = path.join(rawResultsDir, `${sessionId}.ndjson`);
   const rawEvent = {
     ts: new Date().toISOString(),
     event: 'soniox_result',
@@ -131,7 +129,7 @@ async function main(): Promise<void> {
   const finalized = await finalizeConversation({
     sessionId,
     rawTranscriptPath,
-    outputDir: finalDir,
+    outputDir: finalizedResultsDir,
     recordingStartedAt,
   });
   const aligned = await alignConversationSpeakers({

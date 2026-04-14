@@ -14,6 +14,7 @@ import { mapSpeakersForConversation } from '../services/speaker-mapper';
 import { alignConversationSpeakers } from '../services/speaker-alignment';
 import { StreamVadGate } from '../services/stream-vad-gate';
 import { syncConversationSegments } from '../services/knowledge-ingest';
+import { audioUploadsDir, finalizedResultsDir, rawResultsDir } from '../runtime-paths';
 
 function shouldRunSpeakerIdentityMapping(): boolean {
   return process.env.ENABLE_SPEAKER_IDENTITY_MAPPING === 'true';
@@ -83,15 +84,12 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   const streamIdleFinalizeMs = Number(process.env.STREAM_IDLE_FINALIZE_MS ?? 0);
 
   // Audio file writer - saves WAV with RIFF header
-  const AUDIO_DIR = path.join(process.cwd(), 'audio-uploads');
-  const RAW_RESULTS_DIR = path.join(process.cwd(), 'raw_results');
-  const FINALIZED_RESULTS_DIR = path.join(process.cwd(), 'finalized_results');
   const sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const connectedAt = new Date().toISOString();
   const conversationId = genId('conv');
   const audioFileId = genId('aud');
-  const audioFilePath = path.join(AUDIO_DIR, sessionId + '.wav');
-  const recorder = new FinalResultRecorder(sessionId, RAW_RESULTS_DIR);
+  const audioFilePath = path.join(audioUploadsDir, sessionId + '.wav');
+  const recorder = new FinalResultRecorder(sessionId, rawResultsDir);
   const wavWriter = new AudioFileWriter(audioFilePath, {
     sampleRate: 16000,
     channels: 1,
@@ -155,7 +153,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       const finalized = await finalizeConversation({
         sessionId,
         rawTranscriptPath: recorder.filePath,
-        outputDir: FINALIZED_RESULTS_DIR,
+        outputDir: finalizedResultsDir,
         recordingStartedAt: firstAudioFrameAt ?? connectedAt,
       });
       const aligned = await alignConversationSpeakers({

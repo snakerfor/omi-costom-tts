@@ -2,6 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { FinalizedSegment } from './conversation-finalizer';
 import { PyannoteTurn, pyannoteEnabled, runPyannoteDiarization } from './pyannote-diarization';
+import { previewResultsDir } from '../runtime-paths';
 
 export interface AlignmentRow {
   id: string;
@@ -127,11 +128,10 @@ async function writeAlignmentArtifacts(
   alignmentRows: AlignmentRow[],
   diarizationOutputPath: string | null,
 ): Promise<string | null> {
-  const previewDir = path.join(process.cwd(), 'preview_results');
-  const outPath = path.join(previewDir, `${context.sessionId}_speaker_alignment.json`);
+  const outPath = path.join(previewResultsDir, `${context.sessionId}_speaker_alignment.json`);
   const alignedSpeakers = [...new Set(alignmentRows.map(row => row.aligned_speaker).filter(Boolean))];
 
-  await fs.mkdir(previewDir, { recursive: true });
+  await fs.mkdir(previewResultsDir, { recursive: true });
   await fs.writeFile(
     outPath,
     JSON.stringify(
@@ -163,8 +163,7 @@ export async function alignConversationSpeakers(
     };
   }
 
-  const previewDir = path.join(process.cwd(), 'preview_results');
-  const diarizationOutputPath = path.join(previewDir, `${options.sessionId}_pyannote.json`);
+  const diarizationOutputPath = path.join(previewResultsDir, `${options.sessionId}_pyannote.json`);
   try {
     const diarization = await runPyannoteDiarization({
       audioPath: options.audioPath,
