@@ -13,7 +13,7 @@ import * as path from 'path';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import WS, { WebSocketServer } from 'ws';
 import { handleAppConnection } from './handlers/app-connection';
-import { initDb } from './db';
+import { dbPath, initDb } from './db';
 import {
   confirmSpeakerName,
   getSpeakerDetail,
@@ -40,6 +40,7 @@ if (!(globalThis as any).WebSocket) {
 
 console.log('[Boot] globalThis.WebSocket =', typeof (globalThis as any).WebSocket);
 console.log('[Boot] marker = soniox-ws-fix');
+console.log('[Boot] DB path =', dbPath, process.env.DB_PATH ? '(from DB_PATH)' : '(default)');
 
 const AUDIO_DIR = path.join(process.cwd(), 'audio-uploads');
 const PUBLIC_DIR = path.join(process.cwd(), 'public');

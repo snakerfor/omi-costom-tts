@@ -12,8 +12,8 @@
 ### 1. 上传代码到服务器
 
 ```bash
-# 在本地打包（--exclude 必须在文件名之前）
-tar -czvf omi-custom-tts.tar.gz --exclude='node_modules' --exclude='.git' --exclude='dist' .
+# 在本地打包（排除运行时数据，避免覆盖线上库文件）
+./scripts/package-release.sh
 
 # 上传到服务器
 scp omi-custom-tts.tar.gz user@your-server:/opt/omi-custom-tts/
@@ -45,9 +45,15 @@ ACCESS_TOKENS=token-device-a,token-device-b
 
 # 可选
 PORT=8080
+DB_PATH=/www/app.db
 SONIOX_LANGUAGE_HINTS=zh,en
 EOF
 ```
+
+说明：
+
+- `DB_PATH` 建议显式配置，避免服务默认写入当前工作目录下的 `app.db`
+- 如果历史数据在 `/www/app.db`，线上环境应固定使用该路径，不要依赖默认值
 
 ### 4. 使用 PM2 运行
 
