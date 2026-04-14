@@ -45,7 +45,7 @@ export class AudioFileWriter {
    */
   write(data: Buffer): void {
     if (this.finalized) {
-      throw new Error('cannot write after WAV file has been finalized');
+      return;
     }
 
     if (!data.length) {

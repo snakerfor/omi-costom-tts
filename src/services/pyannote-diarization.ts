@@ -112,6 +112,9 @@ async function sleep(ms: number): Promise<void> {
 }
 
 export function pyannoteEnabled(): boolean {
+  if (process.env.ENABLE_PYANNOTE_ALIGNMENT === 'false') {
+    return false;
+  }
   return !!process.env.PYANNOTE_API_KEY;
 }
 

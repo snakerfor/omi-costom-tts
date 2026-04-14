@@ -497,8 +497,9 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       if (!firstAudioFrameAt) {
         firstAudioFrameAt = new Date().toISOString();
       }
-      // Write to WAV file
-      wavWriter.write(audioData);
+      if (!wavFinalized) {
+        wavWriter.write(audioData);
+      }
 
       if (sonioxConnected && sonioxAcceptingAudio && sonioxSession) {
         applyVadDecision(audioData);

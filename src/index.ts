@@ -1,6 +1,13 @@
 // Load dotenv first before any other imports
 require('dotenv').config();
 
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] uncaughtException:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] unhandledRejection:', reason);
+});
+
 import * as fs from 'fs';
 import * as path from 'path';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
