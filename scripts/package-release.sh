@@ -16,5 +16,6 @@ tar -czvf "$OUT_FILE" \
   --exclude='raw_results' \
   --exclude='finalized_results' \
   --exclude='preview_results' \
+  --exclude='recovery_audit' \
   --exclude='tests/.tmp' \
   .

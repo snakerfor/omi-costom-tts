@@ -55,6 +55,72 @@ textarea {
   margin-bottom: 16px;
 }
 
+.memory-panel {
+  padding: 18px 20px;
+  margin-bottom: 16px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+}
+
+.memory-panel-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.memory-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.memory-stat-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(15, 139, 109, 0.06);
+}
+
+.memory-stat-card strong {
+  font-size: 24px;
+}
+
+.memory-actions {
+  display: grid;
+  grid-template-columns: 1.2fr 1.5fr 1fr 1fr;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.memory-actions input[type="password"] {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-strong);
+}
+
+.toggle-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 4px;
+}
+
+.memory-meta {
+  display: grid;
+  gap: 6px;
+}
+
 .eyebrow {
   margin: 0 0 4px;
   color: var(--muted);
@@ -437,6 +503,8 @@ button,
 }
 
 @media (max-width: 1180px) {
+  .memory-stats,
+  .memory-actions,
   .toolbar {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -455,6 +523,8 @@ button,
     padding: 14px;
   }
 
+  .memory-stats,
+  .memory-actions,
   .toolbar {
     grid-template-columns: 1fr;
   }

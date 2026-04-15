@@ -37,12 +37,18 @@ export function isAIAvailable(): boolean {
   }
 }
 
+export function isAIAvailableFor(apiKey?: string | null): boolean {
+  if (apiKey && apiKey.trim()) return true;
+  return isAIAvailable();
+}
+
 export async function chatCompletion(prompt: string, options?: {
   maxTokens?: number;
   temperature?: number;
   systemPrompt?: string;
+  apiKey?: string;
 }): Promise<string> {
-  const apiKey = getApiKey();
+  const apiKey = options?.apiKey?.trim() || getApiKey();
   const maxTokens = options?.maxTokens ?? 2048;
   const temperature = options?.temperature ?? 0.3;
 

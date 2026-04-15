@@ -6,7 +6,7 @@
  *   2. aggregateAndEnhance()   — heavier, call on a timer (involves AI)
  */
 import { db } from '../db';
-import { isAIAvailable, chatCompletion, parseJSON } from './minimax-client';
+import { isAIAvailable, isAIAvailableFor, chatCompletion, parseJSON } from './minimax-client';
 
 function genId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -267,7 +267,17 @@ export async function aggregateNewConversations(): Promise<number> {
   return created;
 }
 
-export async function extractNewMemories(): Promise<number> {
+export interface ExtractNewMemoriesOptions {
+  requireAI?: boolean;
+  apiKey?: string;
+}
+
+export async function extractNewMemories(options?: ExtractNewMemoriesOptions): Promise<number> {
+  const aiAvailable = isAIAvailableFor(options?.apiKey);
+  if (options?.requireAI && !aiAvailable) {
+    throw new Error('MiniMax API key not found. Provide an API key to run AI supplement.');
+  }
+
   const unprocessedConvs = db.prepare(`
     SELECT id, started_at, title, summary, participants_json, topics_json, primary_source
     FROM knowledge_conversations
@@ -301,9 +311,9 @@ export async function extractNewMemories(): Promise<number> {
 
     let candidates: any[] = [];
 
-    if (isAIAvailable()) {
+    if (aiAvailable) {
       try {
-        candidates = await extractMemoryCandidatesAI(conv, textParts.join('\n'));
+        candidates = await extractMemoryCandidatesAI(conv, textParts.join('\n'), options?.apiKey);
       } catch (err) {
         console.warn(`[knowledge] memory extraction failed for ${conv.id}: ${err}`);
       }
@@ -381,9 +391,8 @@ export function startKnowledgeScheduler(): void {
   schedulerTimer = setInterval(async () => {
     try {
       const convs = await aggregateNewConversations();
-      const mems = await extractNewMemories();
-      if (convs || mems) {
-        console.log(`[knowledge] scheduled run: ${convs} new conversations, ${mems} new memories`);
+      if (convs) {
+        console.log(`[knowledge] scheduled run: ${convs} new conversations`);
       }
     } catch (err) {
       console.error('[knowledge] scheduled aggregation failed:', err);
@@ -458,7 +467,7 @@ Rules: same language as content, topics max 5, action_items only if explicit, ra
   return { title: parsed.title || '', summary: parsed.summary || '', topics: parsed.topics || [], actionItems: parsed.action_items || [] };
 }
 
-async function extractMemoryCandidatesAI(conv: any, transcript: string): Promise<any[]> {
+async function extractMemoryCandidatesAI(conv: any, transcript: string, apiKey?: string): Promise<any[]> {
   const prompt = `You are a personal knowledge assistant. Extract long-term facts from this conversation that are worth remembering.
 
 <context>Conversation: ${conv.title || conv.id}, Time: ${conv.started_at}</context>
@@ -471,7 +480,7 @@ Return 0-3 items. Most casual conversations should return [].
 Return JSON array: [{"candidate_text":"clear fact in content language","category":"person|relationship|project|preference|habit|work_context|recurring_task|fact","confidence":0.6-1.0,"evidence":"brief quote","why_long_term":"one sentence"}]
 If nothing worth remembering, return []. Raw JSON only.`;
 
-  const text = await chatCompletion(prompt, { temperature: 0.2, maxTokens: 4096 });
+  const text = await chatCompletion(prompt, { temperature: 0.2, maxTokens: 4096, apiKey });
   const arr = parseJSON<any[]>(text);
   if (!Array.isArray(arr)) return [];
   return arr.filter((c: any) => c.candidate_text && c.category && typeof c.confidence === 'number');

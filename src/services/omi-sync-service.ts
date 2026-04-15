@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { db } from '../db';
 import { syncOmiMetadataBatch } from './knowledge-ingest';
+import { importOmiMemoriesToKnowledge } from './knowledge-memory-service';
 import { omiSyncVideoRoot } from '../runtime-paths';
 
 export type OmiEntityName =
@@ -302,6 +303,10 @@ export function ingestMetadata(payload: OmiMetadataPayload): Record<string, unkn
       if (synced > 0) {
         console.log(`[knowledge] incremental sync: ${synced} new events from omi-sync`);
       }
+    }
+    if ((summary.memories ?? 0) > 0) {
+      const imported = importOmiMemoriesToKnowledge({ sourceKey: payload.sourceKey });
+      console.log(`[knowledge] synced OMI memories into knowledge_memories: inserted=${imported.inserted}, merged=${imported.merged}, skipped=${imported.skipped}, total=${imported.totalActive}`);
     }
   } catch (err) {
     console.error('[knowledge] incremental sync failed:', err);

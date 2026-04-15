@@ -295,6 +295,12 @@ export function initDb(): void {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS knowledge_runtime_settings (
+      key TEXT PRIMARY KEY,
+      value_text TEXT,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS knowledge_events (
       id TEXT PRIMARY KEY,
       source_type TEXT NOT NULL,

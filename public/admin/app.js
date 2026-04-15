@@ -7,6 +7,7 @@
     conversations: [],
     conversationPagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 },
     selectedConversationId: null,
+    memoryStatus: null,
   };
 
   function qs(selector) {
@@ -91,6 +92,81 @@
     qs('#stat-unconfirmed-name').textContent = stats.unconfirmedName;
     qs('#stat-unconfirmed-identity').textContent = stats.unconfirmedIdentity;
     qs('#stat-unconfirmed-any').textContent = stats.unconfirmedAny;
+  }
+
+  function formatRunSummary(summary) {
+    if (!summary) return '-';
+    const time = summary.finishedAt || summary.startedAt || '-';
+    if (summary.error) return `${formatDate(time)} 失败：${summary.error}`;
+    if (summary.mode === 'omi_import') {
+      return `${formatDate(time)} 导入 ${summary.inserted || 0}，合并 ${summary.merged || 0}，总量 ${summary.totalActive || 0}`;
+    }
+    if (summary.mode === 'ai_supplement') {
+      return `${formatDate(time)} 新增 ${summary.promoted || 0}，总量 ${summary.totalActive || 0}`;
+    }
+    return formatDate(time);
+  }
+
+  function renderMemoryStatus(status) {
+    state.memoryStatus = status;
+    qs('#memory-omi-count').textContent = String(status.omiMemoryCount || 0);
+    qs('#memory-knowledge-count').textContent = String(status.knowledgeMemoryCount || 0);
+    qs('#memory-candidate-count').textContent = String(status.candidateCount || 0);
+    qs('#memory-ai-enabled').checked = !!status.aiSupplementEnabled;
+    qs('#memory-ai-availability').textContent = status.aiAvailableFromEnv
+      ? '服务器已检测到 MiniMax 环境变量，可直接补充。'
+      : '服务器未配置 MiniMax 环境变量，可在执行时临时填入 API Key。';
+    qs('#memory-last-omi-import').textContent = `最近 OMI 导入：${formatRunSummary(status.lastOmiImport)}`;
+    qs('#memory-last-ai-supplement').textContent = `最近 AI 补充：${formatRunSummary(status.lastAiSupplement)}`;
+    qs('#memory-run-ai').disabled = !status.aiSupplementEnabled || !!status.aiJobRunning;
+    qs('#memory-sync-omi').disabled = !!status.aiJobRunning;
+    qs('#memory-job-badge').innerHTML = status.aiJobRunning
+      ? '<span class="badge warning">AI 补充运行中</span>'
+      : status.aiSupplementEnabled
+        ? '<span class="badge">AI 补充入口已启用</span>'
+        : '<span class="badge danger">AI 补充入口已关闭</span>';
+  }
+
+  async function loadMemoryStatus() {
+    const result = await apiGet('/api/knowledge/memories/status');
+    renderMemoryStatus(result.data);
+  }
+
+  async function saveMemoryConfig() {
+    await apiSend('/api/knowledge/memories/config', 'POST', {
+      aiSupplementEnabled: qs('#memory-ai-enabled').checked,
+    });
+    await loadMemoryStatus();
+  }
+
+  async function syncOmiMemories() {
+    const button = qs('#memory-sync-omi');
+    button.disabled = true;
+    try {
+      const result = await apiSend('/api/knowledge/memories/sync-omi', 'POST', {});
+      await loadMemoryStatus();
+      window.alert(`OMI memories 同步完成：导入 ${result.data.inserted}，合并 ${result.data.merged}，总量 ${result.data.totalActive}`);
+    } finally {
+      if (state.memoryStatus) renderMemoryStatus(state.memoryStatus);
+    }
+  }
+
+  async function runAiSupplement() {
+    if (!state.memoryStatus?.aiSupplementEnabled) {
+      throw new Error('请先打开 AI 补充入口开关');
+    }
+    const button = qs('#memory-run-ai');
+    button.disabled = true;
+    try {
+      const result = await apiSend('/api/knowledge/memories/ai-supplement', 'POST', {
+        apiKey: qs('#memory-api-key').value.trim() || undefined,
+      });
+      await loadMemoryStatus();
+      window.alert(`AI 补充完成：新增 ${result.data.promoted} 条 memory，总量 ${result.data.totalActive}`);
+    } finally {
+      qs('#memory-api-key').value = '';
+      if (state.memoryStatus) renderMemoryStatus(state.memoryStatus);
+    }
   }
 
   function renderSpeakerPagination() {
@@ -453,8 +529,12 @@
       await loadSpeakerDetail(state.selectedSpeakerId);
       await loadConversations(false);
     });
+
+    qs('#memory-ai-enabled').addEventListener('change', () => saveMemoryConfig().catch(showError));
+    qs('#memory-sync-omi').addEventListener('click', () => syncOmiMemories().catch(showError));
+    qs('#memory-run-ai').addEventListener('click', () => runAiSupplement().catch(showError));
   }
 
   bindEvents();
-  Promise.all([loadIdentityOptions(), loadSpeakers(true), loadConversations(true)]).catch(showError);
+  Promise.all([loadIdentityOptions(), loadSpeakers(true), loadConversations(true), loadMemoryStatus()]).catch(showError);
 })();

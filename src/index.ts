@@ -30,6 +30,12 @@ import { IDENTITY_OPTIONS } from './constants/identity-options';
 import { ingestMetadata, storeVideoChunk, verifySyncToken } from './services/omi-sync-service';
 import { startKnowledgeScheduler, stopKnowledgeScheduler } from './services/knowledge-ingest';
 import {
+  getKnowledgeMemoryStatus,
+  importOmiMemoriesToKnowledge,
+  runAiMemorySupplement,
+  setAiMemorySupplementEnabled,
+} from './services/knowledge-memory-service';
+import {
   adminDir,
   appRoot,
   audioUploadsDir,
@@ -253,6 +259,54 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, urlOb
 
   if (req.method === 'GET' && urlObj.pathname === '/api/meta/identity-options') {
     sendJson(res, 200, { ok: true, data: IDENTITY_OPTIONS });
+    return true;
+  }
+
+  if (req.method === 'GET' && urlObj.pathname === '/api/knowledge/memories/status') {
+    sendJson(res, 200, { ok: true, data: getKnowledgeMemoryStatus() });
+    return true;
+  }
+
+  if (req.method === 'POST' && urlObj.pathname === '/api/knowledge/memories/sync-omi') {
+    const body = await readJsonBody<{ sourceKey?: string }>(req);
+    sendJson(res, 200, {
+      ok: true,
+      data: importOmiMemoriesToKnowledge({ sourceKey: body.sourceKey || undefined }),
+    });
+    return true;
+  }
+
+  if (req.method === 'POST' && urlObj.pathname === '/api/knowledge/memories/config') {
+    const body = await readJsonBody<{ aiSupplementEnabled?: boolean }>(req);
+    if (typeof body.aiSupplementEnabled !== 'boolean') {
+      sendJson(res, 400, { ok: false, error: 'aiSupplementEnabled must be boolean' });
+      return true;
+    }
+    sendJson(res, 200, {
+      ok: true,
+      data: {
+        aiSupplementEnabled: setAiMemorySupplementEnabled(body.aiSupplementEnabled),
+      },
+    });
+    return true;
+  }
+
+  if (req.method === 'POST' && urlObj.pathname === '/api/knowledge/memories/ai-supplement') {
+    const body = await readJsonBody<{ apiKey?: string }>(req);
+    try {
+      sendJson(res, 200, {
+        ok: true,
+        data: await runAiMemorySupplement({ apiKey: body.apiKey }),
+      });
+    } catch (err) {
+      const message = String((err as Error)?.message ?? err);
+      const statusCode = message.includes('already running')
+        ? 409
+        : message.includes('disabled') || message.includes('MiniMax API key')
+          ? 400
+          : 500;
+      sendJson(res, statusCode, { ok: false, error: message });
+    }
     return true;
   }
 

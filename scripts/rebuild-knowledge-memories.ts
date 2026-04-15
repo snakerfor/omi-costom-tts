@@ -36,6 +36,16 @@ interface CandidateFromAI {
   why_long_term: string;
 }
 
+interface ExistingMemory {
+  id: string;
+  canonical_text: string;
+  category: string;
+  confidence: number | null;
+  source_refs_json: string;
+  first_observed_at: string | null;
+  last_observed_at: string | null;
+}
+
 // ─── Step 1: Candidate nomination ───
 
 async function nominateCandidatesForConversation(conv: Conversation): Promise<CandidateFromAI[]> {
@@ -138,6 +148,31 @@ function normalizeForDedup(text: string): string {
   return text.toLowerCase().replace(/[^\w\u4e00-\u9fff]+/g, ' ').trim();
 }
 
+function parseSourceRefs(raw: string): string[] {
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string' && item.trim() !== '') : [];
+  } catch {
+    return [];
+  }
+}
+
+function mergeRefs(current: string[], incoming: string[]): string[] {
+  return [...new Set([...current, ...incoming])];
+}
+
+function minIso(a: string | null, b: string | null): string | null {
+  if (!a) return b;
+  if (!b) return a;
+  return a <= b ? a : b;
+}
+
+function maxIso(a: string | null, b: string | null): string | null {
+  if (!a) return b;
+  if (!b) return a;
+  return a >= b ? a : b;
+}
+
 function persistCandidates(convId: string, candidates: CandidateFromAI[]): number {
   const insert = db.prepare(`
     INSERT OR IGNORE INTO knowledge_memory_candidates (
@@ -206,30 +241,67 @@ function promoteToMemories(): number {
     UPDATE knowledge_memory_candidates SET status = 'accepted', updated_at = ? WHERE id = ?
   `);
 
+  const updateMergedCandidate = db.prepare(`
+    UPDATE knowledge_memory_candidates SET status = 'merged', updated_at = ? WHERE id = ?
+  `);
+
+  const updateExistingMemory = db.prepare(`
+    UPDATE knowledge_memories
+    SET confidence = ?, source_refs_json = ?, first_observed_at = ?, last_observed_at = ?, updated_at = ?
+    WHERE id = ?
+  `);
+
   const now = new Date().toISOString();
   const existingMemories = db.prepare(`
-    SELECT canonical_text, category FROM knowledge_memories WHERE status = 'active'
-  `).all() as Array<{ canonical_text: string; category: string }>;
+    SELECT id, canonical_text, category, confidence, source_refs_json, first_observed_at, last_observed_at
+    FROM knowledge_memories
+    WHERE status = 'active'
+  `).all() as ExistingMemory[];
 
-  const existingNormalized = new Set(
-    existingMemories.map(m => `${m.category}:${normalizeForDedup(m.canonical_text).slice(0, 120)}`)
-  );
+  const existingByCategoryAndText = new Map<string, ExistingMemory>();
+  const existingByText = new Map<string, ExistingMemory>();
+  for (const memory of existingMemories) {
+    const normalizedText = normalizeForDedup(memory.canonical_text).slice(0, 120);
+    existingByCategoryAndText.set(`${memory.category}:${normalizedText}`, memory);
+    if (!existingByText.has(normalizedText)) {
+      existingByText.set(normalizedText, memory);
+    }
+  }
 
   let promoted = 0;
 
   for (const c of candidates) {
-    const normKey = `${c.category}:${normalizeForDedup(c.candidate_text).slice(0, 120)}`;
-    if (existingNormalized.has(normKey)) {
-      db.prepare(`
-        UPDATE knowledge_memory_candidates SET status = 'merged', updated_at = ? WHERE id = ?
-      `).run(now, c.id);
+    const normalizedText = normalizeForDedup(c.candidate_text).slice(0, 120);
+    const byCategoryKey = `${c.category}:${normalizedText}`;
+    const existing = existingByCategoryAndText.get(byCategoryKey) || existingByText.get(normalizedText);
+    if (existing) {
+      const mergedRefs = mergeRefs(parseSourceRefs(existing.source_refs_json), [c.conversation_id]);
+      const confidence = existing.confidence == null
+        ? c.confidence
+        : Math.max(existing.confidence, c.confidence);
+      const firstObservedAt = minIso(existing.first_observed_at, c.created_at);
+      const latestObservedAt = maxIso(existing.last_observed_at, c.created_at);
+      updateExistingMemory.run(
+        confidence,
+        JSON.stringify(mergedRefs),
+        firstObservedAt,
+        latestObservedAt,
+        now,
+        existing.id,
+      );
+      existing.confidence = confidence;
+      existing.source_refs_json = JSON.stringify(mergedRefs);
+      existing.first_observed_at = firstObservedAt;
+      existing.last_observed_at = latestObservedAt;
+      updateMergedCandidate.run(now, c.id);
       continue;
     }
 
     const subjectKey = extractSubjectKey(c.candidate_text, c.category);
+    const memoryId = genId('km');
 
     insertMemory.run(
-      genId('km'),
+      memoryId,
       c.candidate_text,
       c.category,
       subjectKey,
@@ -243,7 +315,17 @@ function promoteToMemories(): number {
     );
 
     updateCandidate.run(now, c.id);
-    existingNormalized.add(normKey);
+    const inserted: ExistingMemory = {
+      id: memoryId,
+      canonical_text: c.candidate_text,
+      category: c.category,
+      confidence: c.confidence,
+      source_refs_json: JSON.stringify([c.conversation_id]),
+      first_observed_at: c.created_at,
+      last_observed_at: c.created_at,
+    };
+    existingByCategoryAndText.set(byCategoryKey, inserted);
+    existingByText.set(normalizedText, inserted);
     promoted++;
   }
 
@@ -272,14 +354,29 @@ function extractSpeaker(json: string | null): string | null {
 
 // ─── CLI ───
 
-function parseArgs(): { mode: 'full' | 'date'; date?: string; ai: boolean; promote: boolean } {
+function nextDayIso(date: string): string {
+  const parts = date.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) {
+    throw new Error(`invalid --date value: ${date}`);
+  }
+  const [year, month, day] = parts;
+  const nextDay = new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0, 0));
+  return nextDay.toISOString();
+}
+
+function parseArgs(): { mode: 'full' | 'date'; date?: string; ai: boolean; promote: boolean; preserveExisting: boolean } {
   const dateArg = process.argv.find(a => a.startsWith('--date='));
   const noAi = process.argv.includes('--no-ai');
   const noPromote = process.argv.includes('--no-promote');
+  const preserveExisting = process.argv.includes('--preserve-existing');
   if (dateArg) {
-    return { mode: 'date', date: dateArg.split('=')[1], ai: !noAi, promote: !noPromote };
+    const date = dateArg.split('=')[1];
+    if (!date) {
+      throw new Error('--date requires a value, e.g. --date=2026-04-15');
+    }
+    return { mode: 'date', date, ai: !noAi, promote: !noPromote, preserveExisting };
   }
-  return { mode: 'full', ai: !noAi, promote: !noPromote };
+  return { mode: 'full', ai: !noAi, promote: !noPromote, preserveExisting };
 }
 
 async function main(): Promise<void> {
@@ -287,16 +384,23 @@ async function main(): Promise<void> {
   const args = parseArgs();
 
   if (args.mode === 'full') {
-    console.log('[memories] full rebuild — clearing candidates and memories');
+    console.log(`[memories] full rebuild — clearing candidates${args.preserveExisting ? ' and preserving existing memories' : ' and memories'}`);
     db.exec('DELETE FROM knowledge_memory_candidates');
-    db.exec('DELETE FROM knowledge_memories');
+    if (!args.preserveExisting) {
+      db.exec('DELETE FROM knowledge_memories');
+    }
   }
 
   const conversations = db.prepare(`
     SELECT id, started_at, title, summary, participants_json, topics_json, primary_source
     FROM knowledge_conversations
+    ${args.mode === 'date' ? 'WHERE started_at >= ? AND started_at < ?' : ''}
     ORDER BY started_at ASC
-  `).all() as Conversation[];
+  `).all(...(
+    args.mode === 'date' && args.date
+      ? [`${args.date}T00:00:00.000Z`, nextDayIso(args.date)]
+      : []
+  )) as Conversation[];
 
   console.log(`[memories] processing ${conversations.length} conversations`);
 

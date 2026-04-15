@@ -20,6 +20,35 @@
         </div>
       </header>
 
+      <section class="memory-panel">
+        <div class="memory-panel-header">
+          <div>
+            <p class="eyebrow">Knowledge Memory</p>
+            <h2>记忆同步与补充</h2>
+          </div>
+          <div id="memory-job-badge" class="badge-row"></div>
+        </div>
+        <div class="memory-stats">
+          <div class="memory-stat-card"><span class="meta-label">OMI Memories</span><strong id="memory-omi-count">0</strong></div>
+          <div class="memory-stat-card"><span class="meta-label">Knowledge Memories</span><strong id="memory-knowledge-count">0</strong></div>
+          <div class="memory-stat-card"><span class="meta-label">待处理 Candidates</span><strong id="memory-candidate-count">0</strong></div>
+        </div>
+        <div class="memory-actions">
+          <label class="toggle-field">
+            <input id="memory-ai-enabled" type="checkbox" />
+            <span>启用 AI 补充入口（默认关闭）</span>
+          </label>
+          <input id="memory-api-key" type="password" placeholder="临时 MiniMax API Key（可选，不保存）" />
+          <button id="memory-sync-omi" type="button" class="secondary-button">同步 OMI Memories 到 Knowledge</button>
+          <button id="memory-run-ai" type="button">执行 AI 补充</button>
+        </div>
+        <div class="memory-meta">
+          <p id="memory-ai-availability" class="subtle">AI 环境检查中...</p>
+          <p id="memory-last-omi-import" class="subtle">最近 OMI 导入：-</p>
+          <p id="memory-last-ai-supplement" class="subtle">最近 AI 补充：-</p>
+        </div>
+      </section>
+
       <nav class="tabs">
         <button class="tab-button active" data-tab="speakers">发言人确认</button>
         <button class="tab-button" data-tab="conversations">对话记录</button>
