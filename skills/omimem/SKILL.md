@@ -2,7 +2,7 @@
 name: omimem
 description: 查询和管理个人知识层——时间线、聚合会话、长期记忆与自然语言问答；并说明 OMI 桌面同步记忆写入 knowledge_memories、HTTP 管理接口与手动 AI 补充。当用户问到「最近发生了什么」「我跟谁说过什么」「我的记忆」「查对话/事件」「omimem」「knowledge memories」或需要回忆历史对话时使用。
 author: snaker
-version: 1.1.1
+version: 1.1.2
 triggers:
   - "我的记忆"
   - "最近发生了什么"
@@ -53,13 +53,36 @@ OMI 桌面同步 (omi_memories) ──┘                              ↓
 
 ## 项目路径
 
-本仓库根目录（示例）：
+| 环境 | 本仓库（含 `package.json`、`.env`）典型路径 |
+|------|---------------------------------------------|
+| 本机开发 | `~/Claude-Projects/omi-custom-tts/`（示例） |
+| 腾讯云部署 | `/www/omi-custom-tts/`（与 `DEPLOY.md` 一致） |
 
-```
-~/Claude-Projects/omi-custom-tts/
+线上 SQLite 数据目录与 `DEPLOY.md` 一致时，多为 **`/www/omi-custom-tts-data/`**，数据库文件 **`/www/omi-custom-tts-data/app.db`**（仍以服务器 `.env` 中 `DATA_ROOT` / `DB_PATH` 为准）。
+
+## OpenClaw / 云端执行 CLI（必读）
+
+`npm run omimem` 依赖 **`dotenv`**：默认只从**进程当前工作目录**加载 `.env`。`src/db.ts` / `src/runtime-paths.ts` 在未设置 `DB_PATH` 时会把数据库解析为 **当前目录下的 `app.db`**。
+
+因此：在 **`~/.openclaw/workspace`** 或其它目录直接跑 `npm run omimem`，且未导出 `DB_PATH` 时，会连到 **错误库或空库**，表现为「查不到记忆 / 时间线为空」——**不是 SKILL 未更新，而是工作目录不对**。
+
+**正确做法（二选一）：**
+
+1. **先进入部署目录再执行**（推荐，会加载该目录下 `.env`）：
+
+```bash
+cd /www/omi-custom-tts && npm run omimem -- timeline
+cd /www/omi-custom-tts && npm run omimem -- stats
 ```
 
-执行 CLI 前请 `cd` 到该目录，并保证 `DATA_ROOT` / `DB_PATH` 指向实际运行库（见「数据库」）。
+2. **任意目录执行时显式指定库与数据根**（与服务器 `.env` 保持一致）：
+
+```bash
+DB_PATH=/www/omi-custom-tts-data/app.db DATA_ROOT=/www/omi-custom-tts-data \
+  bash -lc 'cd /www/omi-custom-tts && npm run omimem -- memories'
+```
+
+只读查数也可走 **HTTP**（无需 CLI cwd）：`GET http://127.0.0.1:28089/api/knowledge/memories/status`（需服务已启动）。
 
 ## Quick Reference（CLI）
 
@@ -111,20 +134,19 @@ npm run rebuild:all-knowledge   # 脚本链；若需保留 OMI 基线请先确�
 
 SQLite 路径由运行时决定，**不要**写死旧路径 `data/omi-tts.db`。
 
-- 默认（未设 `DATA_ROOT`）：仓库根目录下 `app.db`
-- 生产常见：`DATA_ROOT=/path/to/omi-custom-tts-data`，数据库为 `$DATA_ROOT/app.db`
+- 默认（未设 `DATA_ROOT` / 未设 `DB_PATH`）：**当前工作目录**下 `app.db`（易踩坑，见上文「OpenClaw / 云端执行 CLI」）
+- 生产常见：`DATA_ROOT=/www/omi-custom-tts-data`，`DB_PATH=/www/omi-custom-tts-data/app.db`（与 `DEPLOY.md` 示例一致；以实际 `.env` 为准）
 
 关键表：`knowledge_events`、`knowledge_conversations`、`knowledge_conversation_items`、`omi_memories`、`knowledge_memory_candidates`、`knowledge_memories`、`knowledge_runtime_settings`（记忆相关开关与最近任务摘要）
 
 ## 版本管理与云端 OpenClaw
 
 - **唯一源码（Git）**：本仓库 **`skills/omimem/SKILL.md`**。不要用 `.cursor/skills`；历史若存在该路径可删除，以本目录为准。
-- **运行时（云端）**：OpenClaw 跑在 **云端服务器** 上时，将上述文件同步到该机器 OpenClaw workspace 下，例如：
-  - `~/.openclaw/workspace/skills/omimem/SKILL.md`
-  - 若应用代码部署在 `/www/omi-custom-tts`，也可用符号链接：  
-    `ln -sf /www/omi-custom-tts/skills/omimem/SKILL.md ~/.openclaw/workspace/skills/omimem/SKILL.md`  
-    （路径按实际用户与部署目录调整）
-- **发布流程**：`git pull` 更新仓库后，再执行一次复制或确认软链仍指向仓库内 `skills/omimem/SKILL.md`，必要时重启 OpenClaw agent。
+- **运行时（云端）**：OpenClaw 读取的是 **`~/.openclaw/workspace/skills/omimem/SKILL.md`**（root 用户即 `/root/.openclaw/workspace/...`）。与仓库内文件是否一致可用 `md5sum` / `cmp` 对比；**与能否查到业务数据无关**——数据在 **`DB_PATH` 指向的 SQLite**，见「OpenClaw / 云端执行 CLI」。
+- **推荐**：用符号链接避免两份 SKILL 漂移：  
+  `ln -sf /www/omi-custom-tts/skills/omimem/SKILL.md /root/.openclaw/workspace/skills/omimem/SKILL.md`  
+  （若 OpenClaw 以非 root 运行，把 `/root/` 换成该用户 home 下路径。）
+- **发布流程**：在 **`/www/omi-custom-tts`** `git pull` 后，若未使用软链，需再 `cp` 一次到 workspace，或改回软链；更新后可视情况重启 OpenClaw agent。
 
 ## 注意事项
 
