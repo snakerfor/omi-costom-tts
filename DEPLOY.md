@@ -15,12 +15,27 @@
   omi-custom-tts-data/   # 运行时数据（数据库、音频、结果文件）
 ```
 
+## SSH 登录（查阅服务器状态）
+
+本服务部署在腾讯云。日常运维、查 PM2、跟日志、在机器上 `curl` 健康检查、查看 `DATA_ROOT` 下数据等，都需要先登录服务器。
+
+若你在**本机** `~/.ssh/config` 里已配置 `Host tencent`，可直接：
+
+```bash
+ssh tencent
+```
+
+说明：
+
+- `tencent` 是 SSH 别名；实际 `HostName`、`User`、`IdentityFile`、端口等以你本机 `~/.ssh/config` 为准。未配置时可用 `ssh user@服务器 IP` 代替，或先补全 config 再使用 `ssh tencent`。
+- 下文凡写「登录服务器」的步骤，均默认你已能按上述方式连上同一台机器；代码目录、数据目录以服务器上实际路径为准（常见为 `/www/omi-custom-tts` 与 `/www/omi-custom-tts-data`，见上文）。
+
 ## 部署步骤
 
 ### 1. 首次在服务器上准备目录并拉代码
 
 ```bash
-ssh user@your-server
+ssh tencent
 
 mkdir -p /www/omi-custom-tts
 mkdir -p /www/omi-custom-tts-data
@@ -115,7 +130,7 @@ pm2 logs omi-custom-tts
 ### 4. 之后的更新发布
 
 ```bash
-ssh user@your-server
+ssh tencent
 cd /www/omi-custom-tts
 
 # 拉代码并部署
@@ -136,6 +151,52 @@ curl http://localhost:28089/healthz
 
 # 输出应为: {"status":"ok"}
 ```
+
+## 线上巡检（数据与服务状态）
+
+需要确认进程是否存活、接口是否响应、库里是否有持续写入时，先 [`ssh tencent`](#ssh-登录查阅服务器状态)，再按需执行下面命令。  
+数据库路径以服务器上 `.env` 的 `DB_PATH` 为准；若未改，一般为 `/www/omi-custom-tts-data/app.db`。
+
+**HTTP 健康检查**
+
+```bash
+curl -sS http://127.0.0.1:28089/healthz
+# 期望: {"status":"ok"}
+```
+
+**端口是否在监听**
+
+```bash
+ss -tlnp | grep 28089
+# 或: netstat -tlnp | grep 28089
+```
+
+**PM2（若直接执行 `pm2` 提示未找到，可用 login shell）**
+
+```bash
+bash -lc "pm2 status"
+bash -lc "pm2 logs omi-custom-tts --lines=80"
+```
+
+**SQLite：行数与抽样（先设 `DB` 与 `.env` 中 `DB_PATH` 一致）**
+
+```bash
+DB=/www/omi-custom-tts-data/app.db
+sqlite3 "$DB" "SELECT COUNT(*) AS conversations FROM conversations;"
+sqlite3 "$DB" "SELECT COUNT(*) AS segments FROM conversation_segments;"
+sqlite3 "$DB" "SELECT COUNT(*) AS omi_import_runs FROM omi_import_runs;"
+sqlite3 "$DB" "SELECT id, status, created_at, ended_at FROM conversations ORDER BY created_at DESC LIMIT 5;"
+sqlite3 "$DB" "SELECT id, source_key, status, started_at, finished_at FROM omi_import_runs ORDER BY started_at DESC LIMIT 5;"
+```
+
+**应用日志（路径以 PM2 配置为准，常见如下）**
+
+```bash
+tail -n 50 /root/.pm2/logs/omi-custom-tts-out.log
+tail -n 50 /root/.pm2/logs/omi-custom-tts-error.log
+```
+
+日志中出现 `[Soniox] Partial` / `Final` 表示实时转写链路有流量；`[Finalize]` 表示会话结束后的落盘与后续步骤已执行。若健康检查失败或 `segments` 长期不增长，再结合错误日志与 Soniox 配额排查。
 
 ## 常用运维命令
 
@@ -173,6 +234,12 @@ WebSocket URL: wss://your-server.com/stt
     "api_key": "token-device-a"
   }
 }
+```
+
+生产环境若直接使用 IP 接入，WebSocket 示例（以你实际地址为准）：
+
+```text
+wss://47.116.162.110/stt
 ```
 
 ## Nginx 反向代理（可选）
@@ -215,5 +282,3 @@ pm2 logs omi-custom-tts --err --lines=50
 curl -X POST https://api.soniox.com/token-usage \
   -d "api_key=YOUR_API_KEY"
 ```
-
-wss://47.116.162.110/stt
