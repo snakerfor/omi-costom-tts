@@ -2,7 +2,7 @@
 name: omimem
 description: 查询和管理个人知识层——时间线、聚合会话、长期记忆与自然语言问答；并说明 OMI 桌面同步记忆写入 knowledge_memories、HTTP 管理接口与手动 AI 补充。当用户问到「最近发生了什么」「我跟谁说过什么」「我的记忆」「查对话/事件」「omimem」「knowledge memories」或需要回忆历史对话时使用。
 author: snaker
-version: 1.1.3
+version: 1.1.4
 triggers:
   - "我的记忆"
   - "最近发生了什么"
@@ -146,12 +146,15 @@ SQLite 路径由运行时决定，**不要**写死旧路径 `data/omi-tts.db`。
 
 ## 版本管理与云端 OpenClaw
 
-- **唯一源码（Git）**：本仓库 **`skills/omimem/SKILL.md`**。不要用 `.cursor/skills`；历史若存在该路径可删除，以本目录为准。
-- **运行时（云端）**：OpenClaw 读取的是 **`~/.openclaw/workspace/skills/omimem/SKILL.md`**（root 用户即 `/root/.openclaw/workspace/...`）。与仓库内文件是否一致可用 `md5sum` / `cmp` 对比；**与能否查到业务数据无关**——数据在 **`DB_PATH` 指向的 SQLite**，见「OpenClaw / 云端执行 CLI」。
-- **推荐**：用符号链接避免两份 SKILL 漂移：  
-  `ln -sf /www/omi-custom-tts/skills/omimem/SKILL.md /root/.openclaw/workspace/skills/omimem/SKILL.md`  
-  （若 OpenClaw 以非 root 运行，把 `/root/` 换成该用户 home 下路径。）
-- **发布流程**：在 **`/www/omi-custom-tts`** `git pull` 后，若未使用软链，需再 `cp` 一次到 workspace，或改回软链；更新后可视情况重启 OpenClaw agent。
+- **项目内唯一 Git 稿**：本仓库 **`skills/omimem/SKILL.md`**（不要用 `.cursor/skills` 等重复路径）。
+- **与 OpenClaw 分离**：OpenClaw 只认其 workspace 下的独立文件，例如 **`~/.openclaw/workspace/skills/omimem/SKILL.md`**（root 即 `/root/.openclaw/workspace/...`）。**不要**用符号链接把该文件指到项目目录：项目若迁移路径或机器，软链会断，Skill 会整体失效。**项目归项目，Skill 归 Skill**，两边各有一份；逻辑与数据是否可查无关——数据仍在 **`DB_PATH`**，见「OpenClaw / 云端执行 CLI」。
+- **更新方式**：在仓库里改好 `skills/omimem/SKILL.md` 并 `git push` 后，在服务器上对 OpenClaw 侧 **复制覆盖**（路径按实际调整）：
+
+```bash
+cp /www/omi-custom-tts/skills/omimem/SKILL.md /root/.openclaw/workspace/skills/omimem/SKILL.md
+```
+
+若 OpenClaw 以非 root 运行，将目标目录换成该用户 home 下的 `.openclaw/workspace/skills/omimem/`。更新后可视情况重启 OpenClaw agent。以后项目部署目录变更时，只要重新执行一次 **`cp`** 即可，不依赖固定绝对路径的软链。
 
 ## 注意事项
 
