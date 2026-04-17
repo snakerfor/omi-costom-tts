@@ -2,7 +2,7 @@
 name: omimem
 description: 查询和管理个人知识层——时间线、聚合会话、长期记忆与自然语言问答；并说明 OMI 桌面同步记忆写入 knowledge_memories、HTTP 管理接口与手动 AI 补充。当用户问到「最近发生了什么」「我跟谁说过什么」「我的记忆」「查对话/事件」「omimem」「knowledge memories」或需要回忆历史对话时使用。
 author: snaker
-version: 1.1.2
+version: 1.1.3
 triggers:
   - "我的记忆"
   - "最近发生了什么"
@@ -64,7 +64,12 @@ OMI 桌面同步 (omi_memories) ──┘                              ↓
 
 `npm run omimem` 依赖 **`dotenv`**：默认只从**进程当前工作目录**加载 `.env`。`src/db.ts` / `src/runtime-paths.ts` 在未设置 `DB_PATH` 时会把数据库解析为 **当前目录下的 `app.db`**。
 
-因此：在 **`~/.openclaw/workspace`** 或其它目录直接跑 `npm run omimem`，且未导出 `DB_PATH` 时，会连到 **错误库或空库**，表现为「查不到记忆 / 时间线为空」——**不是 SKILL 未更新，而是工作目录不对**。
+因此：
+
+- 在 **`~/.openclaw/workspace`** 下执行 `npm run omimem` 时，若该目录 **不是** 本仓库（没有 `scripts/omimem.ts`），会先报 **`Missing script: "omimem"`**，命令根本不会进入 Node 逻辑。
+- 在任意目录执行且未导出 `DB_PATH` / 未先 `cd` 到部署目录时，会连到 **错误库或空库**，表现为「查不到记忆 / 时间线为空」。
+
+以上通常**不是 SKILL 未更新**，而是 **工作目录或工程根不对**。
 
 **正确做法（二选一）：**
 
