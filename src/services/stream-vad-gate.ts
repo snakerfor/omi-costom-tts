@@ -25,6 +25,7 @@ export interface VadStatsSnapshot {
   detectedSilenceMs: number;
   sentAudioMs: number;
   suppressedAudioMs: number;
+  potentialSuppressedAudioMs: number;
   stateTransitions: number;
   currentlyInSpeech: boolean;
 }
@@ -189,15 +190,21 @@ export class StreamVadGate {
   }
 
   getStatsSnapshot(): VadStatsSnapshot {
+    const potentialSuppressedAudioMs = this.mode === 'off'
+      ? 0
+      : Math.max(0, this.totalAudioMs - this.activeEquivalentSentMs);
+    const actualSuppressedAudioMs = this.mode === 'active'
+      ? Math.max(0, this.totalAudioMs - this.sentAudioMs)
+      : 0;
+
     return {
       mode: this.mode,
       totalAudioMs: this.totalAudioMs,
       detectedSpeechMs: this.detectedSpeechMs,
       detectedSilenceMs: this.detectedSilenceMs,
       sentAudioMs: this.sentAudioMs,
-      suppressedAudioMs: this.mode === 'off'
-        ? 0
-        : Math.max(0, this.totalAudioMs - this.activeEquivalentSentMs),
+      suppressedAudioMs: actualSuppressedAudioMs,
+      potentialSuppressedAudioMs,
       stateTransitions: this.stateTransitions,
       currentlyInSpeech: this.inSpeech,
     };

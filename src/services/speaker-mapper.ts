@@ -1,5 +1,5 @@
 import { db } from '../db';
-import { buildEmbedding } from './embedding-provider';
+import { buildEmbedding, EmbeddingBuildResult } from './embedding-provider';
 import { cosineSimilarity } from '../utils/similarity';
 import { clipAudioSegment } from './audio-clipper';
 import * as path from 'path';
@@ -72,6 +72,7 @@ interface BlockAnalysis extends Block {
   candidateDuration: number;
   clipPaths: string[];
   embedding: number[] | null;
+  embeddingResult: EmbeddingBuildResult | null;
 }
 
 function getNextAnonymousDisplayLabel(): string {
@@ -439,17 +440,25 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
     const candidateDuration = candidates.reduce((sum, row) => sum + row.duration, 0);
     let clipPaths: string[] = [];
     let embedding: number[] | null = null;
+    let embeddingResult: EmbeddingBuildResult | null = null;
 
     if (rep && candidateDuration >= minEnrollmentMs) {
       clipPaths = await buildClipPaths(conversationId, block.speaker_label, candidates, `blk${i}_`);
       if (clipPaths.length > 0) {
         const textSample = block.segments.map(segment => segment.text).join('').slice(0, 500);
-        embedding = await buildEmbedding({
+        embeddingResult = await buildEmbedding({
           speakerLabel: block.speaker_label === 'unknown' ? null : block.speaker_label,
           tokens: [],
           textSample,
           audioPaths: clipPaths,
         });
+        if (embeddingResult.usableForIdentity && embeddingResult.embedding.length) {
+          embedding = embeddingResult.embedding;
+        } else {
+          console.warn(
+            `[SpeakerMapper] Identity disabled for conversation=${conversationId} speaker_label=${block.speaker_label} provider=${embeddingResult.provider}`,
+          );
+        }
       }
     }
 
@@ -461,6 +470,7 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
       candidateDuration,
       clipPaths,
       embedding,
+      embeddingResult,
     });
   }
 
@@ -580,7 +590,12 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
     const usedMethod =
       assignment.method === 'cluster_seed'
         ? clusterMatch?.resolutionMethod || 'deferred_unresolved'
-        : assignment.method;
+        : (!clusterMatch &&
+          block.embeddingResult &&
+          !block.embeddingResult.usableForIdentity &&
+          block.candidateDuration >= minEnrollmentMs
+          ? 'embedding_unavailable'
+          : assignment.method);
     const now = new Date().toISOString();
 
     for (const seg of block.segments) {

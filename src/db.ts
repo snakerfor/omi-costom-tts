@@ -54,6 +54,7 @@ export function initDb(): void {
       vad_detected_silence_ms INTEGER,
       vad_sent_audio_ms INTEGER,
       vad_suppressed_audio_ms INTEGER,
+      vad_potential_suppressed_audio_ms INTEGER,
       vad_state_transitions INTEGER,
       error_message TEXT,
       created_at TEXT NOT NULL,
@@ -336,6 +337,7 @@ export function initDb(): void {
   addColumnIfMissing('conversations', 'vad_detected_silence_ms', 'INTEGER');
   addColumnIfMissing('conversations', 'vad_sent_audio_ms', 'INTEGER');
   addColumnIfMissing('conversations', 'vad_suppressed_audio_ms', 'INTEGER');
+  addColumnIfMissing('conversations', 'vad_potential_suppressed_audio_ms', 'INTEGER');
   addColumnIfMissing('conversations', 'vad_state_transitions', 'INTEGER');
 
   db.exec(`

@@ -40,6 +40,8 @@ async function seedConversation(audioPath: string, speakerLabel: string, text: s
 }
 
 async function main() {
+  process.env.ALLOW_DETERMINISTIC_EMBEDDINGS = 'true';
+  process.env.SPEAKER_MIN_ENROLLMENT_MS = '900';
   initDb();
   db.exec(`
     DELETE FROM conversation_segments;

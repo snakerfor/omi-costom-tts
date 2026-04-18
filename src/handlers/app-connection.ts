@@ -229,7 +229,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
           UPDATE conversations
           SET status = ?, first_audio_frame_at = ?, ended_at = ?, raw_result_path = ?, updated_at = ?, error_message = NULL,
               vad_mode = ?, vad_total_audio_ms = ?, vad_detected_speech_ms = ?, vad_detected_silence_ms = ?,
-              vad_sent_audio_ms = ?, vad_suppressed_audio_ms = ?, vad_state_transitions = ?
+              vad_sent_audio_ms = ?, vad_suppressed_audio_ms = ?, vad_potential_suppressed_audio_ms = ?, vad_state_transitions = ?
           WHERE id = ?
         `).run(
           'completed',
@@ -243,6 +243,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
           vadStats.detectedSilenceMs,
           vadStats.sentAudioMs,
           vadStats.suppressedAudioMs,
+          vadStats.potentialSuppressedAudioMs,
           vadStats.stateTransitions,
           conversationId,
         );
@@ -266,7 +267,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       }
 
       console.log(
-        `[Finalize] session=${sessionId}, reason=${reason}, output=${finalized.outPath}, segments=${segmentsForStorage.length}, alignment=${aligned.alignmentOutputPath || 'disabled'}, identity_mapping=${shouldRunSpeakerIdentityMapping() ? 'enabled' : 'disabled'}, vad_mode=${vadStats.mode}, vad_total_ms=${vadStats.totalAudioMs}, vad_speech_ms=${vadStats.detectedSpeechMs}, vad_sent_ms=${vadStats.sentAudioMs}, vad_suppressed_ms=${vadStats.suppressedAudioMs}`,
+        `[Finalize] session=${sessionId}, reason=${reason}, output=${finalized.outPath}, segments=${segmentsForStorage.length}, alignment=${aligned.alignmentOutputPath || 'disabled'}, identity_mapping=${shouldRunSpeakerIdentityMapping() ? 'enabled' : 'disabled'}, vad_mode=${vadStats.mode}, vad_total_ms=${vadStats.totalAudioMs}, vad_speech_ms=${vadStats.detectedSpeechMs}, vad_sent_ms=${vadStats.sentAudioMs}, vad_actual_suppressed_ms=${vadStats.suppressedAudioMs}, vad_potential_suppressed_ms=${vadStats.potentialSuppressedAudioMs}`,
       );
     } catch (err) {
       console.error('[Finalize] failed:', err);
@@ -276,7 +277,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
           UPDATE conversations
           SET status = ?, ended_at = ?, error_message = ?, updated_at = ?,
               vad_mode = ?, vad_total_audio_ms = ?, vad_detected_speech_ms = ?, vad_detected_silence_ms = ?,
-              vad_sent_audio_ms = ?, vad_suppressed_audio_ms = ?, vad_state_transitions = ?
+              vad_sent_audio_ms = ?, vad_suppressed_audio_ms = ?, vad_potential_suppressed_audio_ms = ?, vad_state_transitions = ?
           WHERE id = ?
         `).run(
           'failed',
@@ -289,6 +290,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
           vadStats.detectedSilenceMs,
           vadStats.sentAudioMs,
           vadStats.suppressedAudioMs,
+          vadStats.potentialSuppressedAudioMs,
           vadStats.stateTransitions,
           conversationId,
         );
