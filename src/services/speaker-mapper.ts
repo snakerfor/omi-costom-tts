@@ -5,6 +5,7 @@ import { clipAudioSegment } from './audio-clipper';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { clipsDir } from '../runtime-paths';
+import { CandidateDecisionReason, clearPendingCandidatesForConversation, createSpeakerCandidate } from './speaker-candidate-service';
 
 function genId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -43,6 +44,13 @@ interface SpeakerMatch {
   similarity: number;
 }
 
+interface MatchEvaluation {
+  best: SpeakerMatch | null;
+  second: SpeakerMatch | null;
+  selected: SpeakerMatch | null;
+  reason: CandidateDecisionReason | null;
+}
+
 export interface LocalClusterInput {
   blockIndex: number;
   speakerLabel: string;
@@ -73,12 +81,6 @@ interface BlockAnalysis extends Block {
   clipPaths: string[];
   embedding: number[] | null;
   embeddingResult: EmbeddingBuildResult | null;
-}
-
-function getNextAnonymousDisplayLabel(): string {
-  const row = db.prepare(`SELECT COUNT(*) AS cnt FROM speakers WHERE status = 'anonymous'`).get() as { cnt?: number };
-  const next = (row?.cnt || 0) + 1;
-  return `未命名发言人${next}`;
 }
 
 function pickCandidateSegments(rows: SegmentRow[], maxCount: number = 3): CandidateSegment[] {
@@ -277,8 +279,15 @@ export function findBestMatchFromRows(
   rows: EmbeddingRow[],
   threshold: number,
   margin: number,
-): SpeakerMatch | null {
-  if (!rows.length) return null;
+): MatchEvaluation {
+  if (!rows.length) {
+    return {
+      best: null,
+      second: null,
+      selected: null,
+      reason: 'low_confidence',
+    };
+  }
 
   const grouped = new Map<string, SpeakerMatch & { similarities: number[] }>();
   for (const row of rows) {
@@ -321,22 +330,44 @@ export function findBestMatchFromRows(
   const best = ranked[0];
   const second = ranked[1];
 
-  if (!best) return null;
+  if (!best) {
+    return {
+      best: null,
+      second: null,
+      selected: null,
+      reason: 'low_confidence',
+    };
+  }
   if (best.similarity < threshold) {
     console.log(`[SpeakerMapper] Best match ${best.similarity.toFixed(3)} < threshold ${threshold}, creating new speaker.`);
-    return null;
+    return {
+      best,
+      second: second || null,
+      selected: null,
+      reason: 'low_confidence',
+    };
   }
   if (second && (best.similarity - second.similarity) < margin) {
     console.log(
       `[SpeakerMapper] Ambiguous match best=${best.similarity.toFixed(3)} second=${second.similarity.toFixed(3)} margin=${margin}, deferring speaker binding.`,
     );
-    return null;
+    return {
+      best,
+      second,
+      selected: null,
+      reason: 'conflict',
+    };
   }
 
-  return best;
+  return {
+    best,
+    second: second || null,
+    selected: best,
+    reason: null,
+  };
 }
 
-function findBestMatch(embedding: number[], threshold: number, margin: number): SpeakerMatch | null {
+function findBestMatch(embedding: number[], threshold: number, margin: number): MatchEvaluation {
   const rows = db.prepare(`
     SELECT
       se.speaker_id,
@@ -347,6 +378,7 @@ function findBestMatch(embedding: number[], threshold: number, margin: number): 
       s.display_label
     FROM speaker_embeddings se
     JOIN speakers s ON s.id = se.speaker_id
+    WHERE s.status = 'confirmed'
   `).all() as EmbeddingRow[];
 
   return findBestMatchFromRows(embedding, rows, threshold, margin);
@@ -387,6 +419,12 @@ interface Block {
 }
 
 export async function mapSpeakersForConversation(conversationId: string): Promise<void> {
+  const conversationMeta = db.prepare(`
+    SELECT session_id
+    FROM conversations
+    WHERE id = ?
+  `).get(conversationId) as { session_id?: string | null } | undefined;
+  clearPendingCandidatesForConversation(conversationId);
   const segments = db.prepare(`
     SELECT id, start_ms, end_ms, absolute_start_time, absolute_end_time, speaker_label, text
     FROM conversation_segments
@@ -488,7 +526,7 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
     localGapMs,
   );
 
-  const clusterMatchByIndex = new Map<number, { matchInfo: MatchInfo; resolutionMethod: string }>();
+  const clusterMatchByIndex = new Map<number, { matchInfo: MatchInfo | null; resolutionMethod: string }>();
   for (let clusterIndex = 0; clusterIndex < clusters.length; clusterIndex++) {
     const cluster = clusters[clusterIndex];
     const clusterBlocks = cluster.blockIndexes
@@ -502,14 +540,14 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
       .sort((a, b) => b.candidateDuration - a.candidateDuration)[0];
     const rep = representative?.rep || null;
     const repClipPath = representative?.clipPaths[0] || null;
-    const now = new Date().toISOString();
 
     if (!centroid.length || !representative || !rep) {
       continue;
     }
 
-    const match = findBestMatch(centroid, threshold, margin);
-    if (match) {
+    const matchEvaluation = findBestMatch(centroid, threshold, margin);
+    if (matchEvaluation.selected) {
+      const match = matchEvaluation.selected;
       clusterMatchByIndex.set(clusterIndex, {
         matchInfo: {
           speaker_id: match.speaker_id,
@@ -518,64 +556,44 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
           status: match.speaker_status,
           similarity: match.similarity,
         },
-        resolutionMethod: match.speaker_status === 'confirmed' ? 'cluster_embedding_match' : 'cluster_anonymous_match',
+        resolutionMethod: 'cluster_embedding_match',
       });
       continue;
     }
 
-    const newSpeakerId = genId('spk');
-    const embeddingId = genId('emb');
-    const displayLabel = getNextAnonymousDisplayLabel();
-
-    db.prepare(`
-      INSERT INTO speakers (
-        id, name, status, display_label, identity_label, identity_status, notes,
-        first_seen_at, last_seen_at, sample_text, sample_segment_id, sample_audio_path,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      newSpeakerId,
-      null,
-      'anonymous',
-      displayLabel,
-      null,
-      'unconfirmed',
-      null,
-      representative.segments[0]?.absolute_start_time || now,
-      representative.segments[representative.segments.length - 1]?.absolute_end_time || now,
-      rep.text || null,
-      rep.id || null,
-      repClipPath,
-      now,
-      now,
+    const decisionReason: CandidateDecisionReason =
+      matchEvaluation.reason || 'low_confidence';
+    const clipRows = clusterBlocks.flatMap(block =>
+      block.clipPaths.map((clipPath, index) => {
+        const candidate = block.candidates[index] || null;
+        return {
+          segmentId: candidate?.id || block.rep?.id || null,
+          clipPath,
+          text: candidate?.text || block.rep?.text || null,
+          startMs: candidate?.start_ms ?? block.rep?.start_ms ?? null,
+          endMs: candidate?.end_ms ?? block.rep?.end_ms ?? null,
+          durationMs: candidate?.duration ?? null,
+        };
+      }),
     );
-
-    db.prepare(`
-      INSERT INTO speaker_embeddings (
-        id, speaker_id, embedding_json, sample_rate, duration_ms,
-        source_audio_file_id, source_segment_id, source, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      embeddingId,
-      newSpeakerId,
-      JSON.stringify(centroid),
-      16000,
-      representative.candidateDuration,
-      null,
-      rep.id || null,
-      'auto_discovered',
-      now,
-    );
+    createSpeakerCandidate({
+      conversationId,
+      sessionId: conversationMeta?.session_id || null,
+      speakerLabel: representative.speaker_label,
+      rawEmbedding: centroid,
+      bestMatchSpeakerId: matchEvaluation.best?.speaker_id || null,
+      bestScore: matchEvaluation.best?.similarity ?? null,
+      secondMatchSpeakerId: matchEvaluation.second?.speaker_id || null,
+      secondScore: matchEvaluation.second?.similarity ?? null,
+      decisionReason,
+      sampleClipPath: repClipPath,
+      sampleText: rep.text || null,
+      clips: clipRows,
+    });
 
     clusterMatchByIndex.set(clusterIndex, {
-      matchInfo: {
-        speaker_id: newSpeakerId,
-        speaker_name: null,
-        identity_label: null,
-        status: 'anonymous',
-        similarity: null,
-      },
-      resolutionMethod: 'cluster_anonymous_match',
+      matchInfo: null,
+      resolutionMethod: 'candidate_pending',
     });
   }
 
@@ -587,15 +605,15 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
     };
     const clusterMatch = assignment.clusterIndex != null ? clusterMatchByIndex.get(assignment.clusterIndex) : null;
     const matchInfo = clusterMatch?.matchInfo || null;
-    const usedMethod =
-      assignment.method === 'cluster_seed'
-        ? clusterMatch?.resolutionMethod || 'deferred_unresolved'
-        : (!clusterMatch &&
-          block.embeddingResult &&
-          !block.embeddingResult.usableForIdentity &&
-          block.candidateDuration >= minEnrollmentMs
+    const usedMethod = clusterMatch
+      ? clusterMatch.resolutionMethod
+      : (
+        block.embeddingResult &&
+        !block.embeddingResult.usableForIdentity &&
+        block.candidateDuration >= minEnrollmentMs
           ? 'embedding_unavailable'
-          : assignment.method);
+          : assignment.method
+      );
     const now = new Date().toISOString();
 
     for (const seg of block.segments) {

@@ -123,6 +123,41 @@ export function initDb(): void {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS speaker_candidates (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      session_id TEXT,
+      speaker_label TEXT,
+      status TEXT NOT NULL,
+      raw_embedding_json TEXT,
+      best_match_speaker_id TEXT,
+      best_score REAL,
+      second_match_speaker_id TEXT,
+      second_score REAL,
+      decision_reason TEXT,
+      sample_clip_path TEXT,
+      sample_text TEXT,
+      confirmed_speaker_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS speaker_candidate_clips (
+      id TEXT PRIMARY KEY,
+      candidate_id TEXT NOT NULL,
+      segment_id TEXT,
+      clip_path TEXT NOT NULL,
+      text TEXT,
+      start_ms INTEGER,
+      end_ms INTEGER,
+      duration_ms INTEGER,
+      decision TEXT NOT NULL DEFAULT 'uncertain',
+      person_name TEXT,
+      note TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS omi_sync_sources (
       source_key TEXT PRIMARY KEY,
       display_name TEXT,
@@ -349,6 +384,11 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_conversation_segments_conversation_id ON conversation_segments(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_conversation_segments_speaker_id ON conversation_segments(speaker_id);
     CREATE INDEX IF NOT EXISTS idx_conversation_segments_absolute_start_time ON conversation_segments(absolute_start_time);
+    CREATE INDEX IF NOT EXISTS idx_speaker_candidates_status ON speaker_candidates(status);
+    CREATE INDEX IF NOT EXISTS idx_speaker_candidates_conversation_id ON speaker_candidates(conversation_id);
+    CREATE INDEX IF NOT EXISTS idx_speaker_candidates_confirmed_speaker_id ON speaker_candidates(confirmed_speaker_id);
+    CREATE INDEX IF NOT EXISTS idx_speaker_candidate_clips_candidate_id ON speaker_candidate_clips(candidate_id);
+    CREATE INDEX IF NOT EXISTS idx_speaker_candidate_clips_segment_id ON speaker_candidate_clips(segment_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_omi_video_chunks_unique ON omi_video_chunks(source_key, video_chunk_path);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_omi_screenshots_unique ON omi_screenshots(source_key, source_screenshot_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_omi_transcription_sessions_unique ON omi_transcription_sessions(source_key, source_session_id);
