@@ -21,6 +21,7 @@
     "rebuild:memories": "ts-node scripts/rebuild-knowledge-memories.ts",
     "rebuild:all-knowledge": "ts-node scripts/rebuild-knowledge-events.ts && ts-node scripts/rebuild-knowledge-conversations.ts && ts-node scripts/rebuild-knowledge-memories.ts",
     "audit:speakers": "ts-node scripts/audit-speaker-inventory.ts",
+    "backfill:speaker-window": "ts-node scripts/backfill-speaker-window.ts",
     "rebuild:confirmed-embeddings": "ts-node scripts/rebuild-confirmed-embeddings.ts",
     "disable:legacy-anonymous-embeddings": "ts-node scripts/disable-legacy-anonymous-embeddings.ts",
     "omimem": "ts-node scripts/omimem.ts",
