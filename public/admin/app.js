@@ -539,6 +539,10 @@
                 <option value="uncertain" ${item.decision === 'uncertain' ? 'selected' : ''}>不确定</option>
               </select>
             </label>
+            <label>
+              <span class="meta-label">人物姓名（保留时必填）</span>
+              <input data-seed-person-name type="text" value="${escapeHtml(item.person_name || '')}" placeholder="例如：张三" />
+            </label>
             <label class="full-width">
               <span class="meta-label">备注（可选）</span>
               <input data-seed-note type="text" value="${escapeHtml(item.note || '')}" placeholder="例如：背景噪音大/说话人不一致" />
@@ -581,9 +585,14 @@
     const decisions = items.map((node) => ({
       segment_id: node.getAttribute('data-seed-segment-id'),
       decision: node.querySelector('[data-seed-decision]').value,
+      person_name: (node.querySelector('[data-seed-person-name]').value || '').trim() || null,
       note: node.querySelector('[data-seed-note]').value || null,
     }));
     const filtered = decisions.filter((item) => ['keep', 'drop', 'uncertain'].includes(item.decision));
+    const invalidKeep = filtered.find((item) => item.decision === 'keep' && !item.person_name);
+    if (invalidKeep) {
+      throw new Error(`segment ${invalidKeep.segment_id} 选择“保留”时必须填写人物姓名`);
+    }
     await apiSend(`/api/seed-batches/${encodeURIComponent(state.selectedSeedBatchId)}/decisions`, 'POST', {
       decisions: filtered,
     });

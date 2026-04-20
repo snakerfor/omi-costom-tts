@@ -38,6 +38,7 @@ interface DecisionItem {
   segment_id: string;
   speaker_label: string;
   decision: SeedDecision;
+  person_name: string | null;
   note: string | null;
   updated_at: string;
 }
@@ -64,6 +65,7 @@ export interface SeedBatchDetail extends SeedBatchSummary {
   output_dir: string;
   candidates: Array<SeedCandidate & {
     decision: SeedDecision | null;
+    person_name: string | null;
     note: string | null;
   }>;
 }
@@ -158,6 +160,7 @@ export async function getSeedBatchDetail(batchId: string): Promise<SeedBatchDeta
       return {
         ...candidate,
         decision: decision?.decision || null,
+        person_name: decision?.person_name || null,
         note: decision?.note || null,
       };
     }),
@@ -166,7 +169,7 @@ export async function getSeedBatchDetail(batchId: string): Promise<SeedBatchDeta
 
 export async function saveSeedBatchDecisions(
   batchId: string,
-  decisions: Array<{ segment_id: string; decision: SeedDecision; note?: string | null }>,
+  decisions: Array<{ segment_id: string; decision: SeedDecision; person_name?: string | null; note?: string | null }>,
 ): Promise<SeedBatchDetail> {
   const batchDir = resolveBatchDir(batchId);
   const manifest = await readManifest(batchDir);
@@ -181,11 +184,16 @@ export async function saveSeedBatchDecisions(
     if (!['keep', 'drop', 'uncertain'].includes(item.decision)) {
       throw new Error(`invalid decision for segment ${item.segment_id}`);
     }
+    const personName = item.person_name == null ? null : String(item.person_name).trim() || null;
+    if (item.decision === 'keep' && !personName) {
+      throw new Error(`person_name is required when decision=keep for segment ${item.segment_id}`);
+    }
     const candidate = manifest.candidates.find(row => row.segment_id === item.segment_id);
     items.push({
       segment_id: item.segment_id,
       speaker_label: candidate?.speaker_label || 'unknown',
       decision: item.decision,
+      person_name: personName,
       note: item.note == null ? null : String(item.note).trim() || null,
       updated_at: now,
     });

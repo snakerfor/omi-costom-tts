@@ -292,7 +292,12 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, urlOb
   if (req.method === 'POST' && /^\/api\/seed-batches\/[^/]+\/decisions$/.test(urlObj.pathname)) {
     const batchId = decodeURIComponent(urlObj.pathname.split('/')[3] || '');
     const body = await readJsonBody<{
-      decisions?: Array<{ segment_id: string; decision: 'keep' | 'drop' | 'uncertain'; note?: string | null }>;
+      decisions?: Array<{
+        segment_id: string;
+        decision: 'keep' | 'drop' | 'uncertain';
+        person_name?: string | null;
+        note?: string | null;
+      }>;
     }>(req);
     if (!Array.isArray(body.decisions)) {
       sendJson(res, 400, { ok: false, error: 'decisions must be an array' });
