@@ -5,6 +5,7 @@ import sys
 import tempfile
 import shutil
 from pathlib import Path
+from typing import Optional
 
 
 def fallback_embedding(seed: str):
@@ -16,7 +17,7 @@ def fallback_embedding(seed: str):
     return out
 
 
-def prepare_local_model_source(model_dir: str) -> str:
+def prepare_local_model_source(model_dir: str) -> Path:
     model_path = Path(model_dir)
     hyperparams_path = model_path / "hyperparams.yaml"
     if not hyperparams_path.exists():
@@ -36,7 +37,7 @@ def prepare_local_model_source(model_dir: str) -> str:
         f"pretrained_path: {model_path}",
     )
     (temp_dir / "hyperparams.yaml").write_text(rewritten, encoding="utf-8")
-    return str(temp_dir)
+    return temp_dir
 
 
 def main():
@@ -45,6 +46,7 @@ def main():
         print(json.dumps({"error": "no_audio_paths"}))
         return
 
+    temp_model_dir: Optional[Path] = None
     try:
         import torch
         import soundfile as sf
@@ -55,7 +57,8 @@ def main():
         source = "speechbrain/spkrec-ecapa-voxceleb"
         savedir = "pretrained_models/spkrec-ecapa-voxceleb"
         if model_dir:
-            source = prepare_local_model_source(model_dir)
+            temp_model_dir = prepare_local_model_source(model_dir)
+            source = str(temp_model_dir)
             savedir = source
 
         classifier = EncoderClassifier.from_hparams(
@@ -99,6 +102,9 @@ def main():
             "fallback": True,
             "fallback_reason": str(exc),
         }))
+    finally:
+        if temp_model_dir is not None:
+            shutil.rmtree(temp_model_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":
