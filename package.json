@@ -20,6 +20,9 @@
     "rebuild:conversations": "ts-node scripts/rebuild-knowledge-conversations.ts",
     "rebuild:memories": "ts-node scripts/rebuild-knowledge-memories.ts",
     "rebuild:all-knowledge": "ts-node scripts/rebuild-knowledge-events.ts && ts-node scripts/rebuild-knowledge-conversations.ts && ts-node scripts/rebuild-knowledge-memories.ts",
+    "audit:speakers": "ts-node scripts/audit-speaker-inventory.ts",
+    "rebuild:confirmed-embeddings": "ts-node scripts/rebuild-confirmed-embeddings.ts",
+    "disable:legacy-anonymous-embeddings": "ts-node scripts/disable-legacy-anonymous-embeddings.ts",
     "omimem": "ts-node scripts/omimem.ts",
     "generate:pcm": "ffmpeg -i tests/test.m4a -f s16le -ar 16000 -ac 1 tests/test.pcm"
   },
