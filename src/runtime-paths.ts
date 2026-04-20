@@ -23,6 +23,7 @@ export const omiSyncVideoRoot = process.env.OMI_SYNC_VIDEO_ROOT
   : hasDataRootOverride
     ? resolveFrom(dataRoot, 'omi-videos')
     : resolveFrom(appRoot, path.join('data', 'omi-videos'));
+export const seedCandidatesDir = resolveFrom(dataRoot, process.env.SEED_CANDIDATES_DIR ?? 'seed_candidates');
 
 export const publicDir = resolveFrom(appRoot, process.env.PUBLIC_DIR ?? 'public');
 export const adminDir = path.join(publicDir, 'admin');

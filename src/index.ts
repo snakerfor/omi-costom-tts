@@ -44,7 +44,9 @@ import {
   finalizedResultsDir,
   previewStaticDir,
   rawResultsDir,
+  seedCandidatesDir,
 } from './runtime-paths';
+import { getSeedBatchDetail, listSeedBatches, saveSeedBatchDecisions } from './services/seed-review-service';
 
 const PORT = parseInt(process.env.PORT ?? '28089', 10);
 
@@ -65,6 +67,7 @@ const MEDIA_ROOTS: Record<string, string> = {
   clips: clipsDir,
   finalized: finalizedResultsDir,
   raw: rawResultsDir,
+  seed: seedCandidatesDir,
 };
 
 if (!fs.existsSync(audioUploadsDir)) {
@@ -259,6 +262,53 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, urlOb
 
   if (req.method === 'GET' && urlObj.pathname === '/api/meta/identity-options') {
     sendJson(res, 200, { ok: true, data: IDENTITY_OPTIONS });
+    return true;
+  }
+
+  if (req.method === 'GET' && urlObj.pathname === '/api/seed-batches') {
+    sendJson(res, 200, {
+      ok: true,
+      data: await listSeedBatches(),
+    });
+    return true;
+  }
+
+  if (req.method === 'GET' && /^\/api\/seed-batches\/[^/]+$/.test(urlObj.pathname)) {
+    const batchId = decodeURIComponent(urlObj.pathname.split('/')[3] || '');
+    const detail = await getSeedBatchDetail(batchId);
+    sendJson(res, 200, {
+      ok: true,
+      data: {
+        ...detail,
+        candidates: detail.candidates.map(candidate => ({
+          ...candidate,
+          clip_url: toMediaUrl(candidate.clip_path),
+        })),
+      },
+    });
+    return true;
+  }
+
+  if (req.method === 'POST' && /^\/api\/seed-batches\/[^/]+\/decisions$/.test(urlObj.pathname)) {
+    const batchId = decodeURIComponent(urlObj.pathname.split('/')[3] || '');
+    const body = await readJsonBody<{
+      decisions?: Array<{ segment_id: string; decision: 'keep' | 'drop' | 'uncertain'; note?: string | null }>;
+    }>(req);
+    if (!Array.isArray(body.decisions)) {
+      sendJson(res, 400, { ok: false, error: 'decisions must be an array' });
+      return true;
+    }
+    const updated = await saveSeedBatchDecisions(batchId, body.decisions);
+    sendJson(res, 200, {
+      ok: true,
+      data: {
+        ...updated,
+        candidates: updated.candidates.map(candidate => ({
+          ...candidate,
+          clip_url: toMediaUrl(candidate.clip_path),
+        })),
+      },
+    });
     return true;
   }
 

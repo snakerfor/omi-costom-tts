@@ -52,6 +52,7 @@
       <nav class="tabs">
         <button class="tab-button active" data-tab="speakers">发言人确认</button>
         <button class="tab-button" data-tab="conversations">对话记录</button>
+        <button class="tab-button" data-tab="seed-review">切片确认</button>
       </nav>
 
       <main>
@@ -220,6 +221,47 @@
                   <h3>Transcript</h3>
                   <p class="subtle transcript-help">核对方式：优先看“最终”列。若“原始”和“最终”不同，说明这条被阶段一 speaker 对齐纠正过。</p>
                   <div id="conversation-segments" class="segment-list transcript-list"></div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="tab-panel" id="tab-seed-review">
+          <div class="toolbar">
+            <button id="seed-refresh">刷新批次</button>
+            <span id="seed-batch-count" class="subtle">共 0 批</span>
+          </div>
+
+          <div class="two-column">
+            <section class="card list-card">
+              <div class="card-header">
+                <h2>候选批次</h2>
+              </div>
+              <div id="seed-batch-list" class="list"></div>
+            </section>
+
+            <section class="card detail-card">
+              <div id="seed-empty" class="empty-state">请选择一个批次，查看切片文本和音频。</div>
+              <div id="seed-detail" class="detail hidden">
+                <div class="detail-header">
+                  <div>
+                    <p class="eyebrow">切片确认</p>
+                    <h2 id="seed-title">-</h2>
+                  </div>
+                  <div class="actions">
+                    <button id="seed-save" type="button">保存确认结果</button>
+                  </div>
+                </div>
+                <div class="meta-grid">
+                  <div><span class="meta-label">批次 ID</span><span id="seed-batch-id"></span></div>
+                  <div><span class="meta-label">会话 ID</span><span id="seed-session-id"></span></div>
+                  <div><span class="meta-label">发言人数</span><span id="seed-speaker-count"></span></div>
+                  <div><span class="meta-label">候选数</span><span id="seed-candidate-count"></span></div>
+                </div>
+                <div class="detail-section">
+                  <h3>候选切片（文本 + 音频）</h3>
+                  <div id="seed-candidate-list" class="segment-list"></div>
                 </div>
               </div>
             </section>
