@@ -44,9 +44,9 @@ import {
   finalizedResultsDir,
   previewStaticDir,
   rawResultsDir,
-  seedCandidatesDir,
 } from './runtime-paths';
-import { getSeedBatchDetail, listSeedBatches, saveSeedBatchDecisions } from './services/seed-review-service';
+import { getSpeakerCandidateDetail, listPendingSpeakerCandidates } from './services/speaker-candidate-query-service';
+import { confirmCandidate, saveCandidateDecisions } from './services/speaker-candidate-confirm-service';
 
 const PORT = parseInt(process.env.PORT ?? '28089', 10);
 
@@ -67,7 +67,6 @@ const MEDIA_ROOTS: Record<string, string> = {
   clips: clipsDir,
   finalized: finalizedResultsDir,
   raw: rawResultsDir,
-  seed: seedCandidatesDir,
 };
 
 if (!fs.existsSync(audioUploadsDir)) {
@@ -265,35 +264,42 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, urlOb
     return true;
   }
 
-  if (req.method === 'GET' && urlObj.pathname === '/api/seed-batches') {
+  if (req.method === 'GET' && urlObj.pathname === '/api/candidates') {
     sendJson(res, 200, {
       ok: true,
-      data: await listSeedBatches(),
+      data: listPendingSpeakerCandidates().map(item => ({
+        ...item,
+        sample_clip_url: toMediaUrl(item.sample_clip_path),
+      })),
     });
     return true;
   }
 
-  if (req.method === 'GET' && /^\/api\/seed-batches\/[^/]+$/.test(urlObj.pathname)) {
-    const batchId = decodeURIComponent(urlObj.pathname.split('/')[3] || '');
-    const detail = await getSeedBatchDetail(batchId);
+  if (req.method === 'GET' && /^\/api\/candidates\/[^/]+$/.test(urlObj.pathname)) {
+    const candidateId = decodeURIComponent(urlObj.pathname.split('/')[3] || '');
+    const detail = getSpeakerCandidateDetail(candidateId);
     sendJson(res, 200, {
       ok: true,
       data: {
         ...detail,
-        candidates: detail.candidates.map(candidate => ({
-          ...candidate,
-          clip_url: toMediaUrl(candidate.clip_path),
+        candidate: {
+          ...detail.candidate,
+          sample_clip_url: toMediaUrl(detail.candidate.sample_clip_path),
+        },
+        clips: detail.clips.map(clip => ({
+          ...clip,
+          clip_url: toMediaUrl(clip.clip_path),
         })),
       },
     });
     return true;
   }
 
-  if (req.method === 'POST' && /^\/api\/seed-batches\/[^/]+\/decisions$/.test(urlObj.pathname)) {
-    const batchId = decodeURIComponent(urlObj.pathname.split('/')[3] || '');
+  if (req.method === 'POST' && /^\/api\/candidates\/[^/]+\/decisions$/.test(urlObj.pathname)) {
+    const candidateId = decodeURIComponent(urlObj.pathname.split('/')[3] || '');
     const body = await readJsonBody<{
       decisions?: Array<{
-        segment_id: string;
+        clip_id: string;
         decision: 'keep' | 'drop' | 'uncertain';
         person_name?: string | null;
         note?: string | null;
@@ -303,17 +309,28 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, urlOb
       sendJson(res, 400, { ok: false, error: 'decisions must be an array' });
       return true;
     }
-    const updated = await saveSeedBatchDecisions(batchId, body.decisions);
+    saveCandidateDecisions(candidateId, body.decisions);
+    const updated = getSpeakerCandidateDetail(candidateId);
     sendJson(res, 200, {
       ok: true,
       data: {
-        ...updated,
-        candidates: updated.candidates.map(candidate => ({
-          ...candidate,
-          clip_url: toMediaUrl(candidate.clip_path),
+        candidate: {
+          ...updated.candidate,
+          sample_clip_url: toMediaUrl(updated.candidate.sample_clip_path),
+        },
+        clips: updated.clips.map(clip => ({
+          ...clip,
+          clip_url: toMediaUrl(clip.clip_path),
         })),
       },
     });
+    return true;
+  }
+
+  if (req.method === 'POST' && /^\/api\/candidates\/[^/]+\/confirm$/.test(urlObj.pathname)) {
+    const candidateId = decodeURIComponent(urlObj.pathname.split('/')[3] || '');
+    const result = await confirmCandidate(candidateId);
+    sendJson(res, 200, { ok: true, data: result });
     return true;
   }
 

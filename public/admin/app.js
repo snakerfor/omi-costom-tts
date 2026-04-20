@@ -8,9 +8,9 @@
     conversationPagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 },
     selectedConversationId: null,
     memoryStatus: null,
-    seedBatches: [],
-    selectedSeedBatchId: null,
-    seedBatchDetail: null,
+    candidates: [],
+    selectedCandidateId: null,
+    candidateDetail: null,
   };
 
   function qs(selector) {
@@ -476,57 +476,65 @@
     renderConversationDetail(result.data);
   }
 
+  function candidateReasonLabel(value) {
+    if (value === 'low_confidence') return '低置信';
+    if (value === 'conflict') return '冲突';
+    if (value === 'embedding_unavailable') return '向量不可用';
+    return value || '-';
+  }
+
   function renderSeedBatchList() {
-    qs('#seed-batch-count').textContent = `共 ${state.seedBatches.length} 批`;
+    qs('#seed-batch-count').textContent = `共 ${state.candidates.length} 条`;
     const listEl = qs('#seed-batch-list');
-    listEl.innerHTML = state.seedBatches.map((item) => `
-      <article class="list-item ${item.id === state.selectedSeedBatchId ? 'active' : ''}" data-seed-batch-id="${escapeHtml(item.id)}">
+    listEl.innerHTML = state.candidates.map((item) => `
+      <article class="list-item ${item.id === state.selectedCandidateId ? 'active' : ''}" data-seed-batch-id="${escapeHtml(item.id)}">
         <div class="list-item-title">
-          <span>${escapeHtml(item.conversation_id)}</span>
-          <span class="subtle">${escapeHtml(formatDate(item.generated_at))}</span>
+          <span>${escapeHtml(item.conversation_id)} / ${escapeHtml(item.speaker_label || '-')}</span>
+          <span class="subtle">${escapeHtml(formatDate(item.created_at))}</span>
         </div>
         <div class="badge-row">
-          <span class="badge">候选 ${item.candidate_count}</span>
-          <span class="badge">已确认 ${item.decided_count}</span>
-          <span class="badge">${item.keep_count}/${item.drop_count}/${item.uncertain_count}</span>
+          <span class="badge">${escapeHtml(candidateReasonLabel(item.decision_reason))}</span>
+          <span class="badge">clips ${item.clip_count}</span>
+          <span class="badge">best ${item.best_score == null ? '-' : item.best_score.toFixed(3)}</span>
         </div>
-        <p class="subtle">${escapeHtml(item.session_id)}</p>
+        <p class="subtle">${escapeHtml(item.best_match_name || item.best_match_speaker_id || '无推荐命中')}</p>
+        <p>${escapeHtml((item.sample_text || '').slice(0, 72) || '暂无样本文本')}</p>
       </article>
     `).join('') || '<p class="subtle">暂无候选批次。</p>';
 
     listEl.querySelectorAll('[data-seed-batch-id]').forEach((node) => {
       node.addEventListener('click', () => {
-        state.selectedSeedBatchId = node.getAttribute('data-seed-batch-id');
+        state.selectedCandidateId = node.getAttribute('data-seed-batch-id');
         renderSeedBatchList();
-        loadSeedBatchDetail(state.selectedSeedBatchId).catch(showError);
+        loadSeedBatchDetail(state.selectedCandidateId).catch(showError);
       });
     });
   }
 
   function resetSeedDetail() {
-    state.seedBatchDetail = null;
+    state.candidateDetail = null;
     qs('#seed-empty').classList.remove('hidden');
     qs('#seed-detail').classList.add('hidden');
   }
 
   function renderSeedBatchDetail(detail) {
-    state.seedBatchDetail = detail;
+    state.candidateDetail = detail;
     qs('#seed-empty').classList.add('hidden');
     qs('#seed-detail').classList.remove('hidden');
-    qs('#seed-title').textContent = detail.conversation_id;
-    qs('#seed-batch-id').textContent = detail.id;
-    qs('#seed-session-id').textContent = detail.session_id;
-    qs('#seed-speaker-count').textContent = String(detail.speaker_count);
-    qs('#seed-candidate-count').textContent = String(detail.candidate_count);
+    qs('#seed-title').textContent = detail.candidate.best_match_name || detail.candidate.sample_text || detail.candidate.id;
+    qs('#seed-batch-id').textContent = detail.candidate.id;
+    qs('#seed-session-id').textContent = detail.candidate.session_id || '-';
+    qs('#seed-speaker-count').textContent = String(detail.candidate.speaker_label || '-');
+    qs('#seed-candidate-count').textContent = String(detail.clips.length);
 
-    qs('#seed-candidate-list').innerHTML = detail.candidates.length
-      ? detail.candidates.map((item, index) => `
-        <article class="segment-item seed-item" data-seed-segment-id="${escapeHtml(item.segment_id)}">
+    qs('#seed-candidate-list').innerHTML = detail.clips.length
+      ? detail.clips.map((item, index) => `
+        <article class="segment-item seed-item" data-seed-segment-id="${escapeHtml(item.id)}">
           <div class="segment-title">
-            <span>${index + 1}. ${escapeHtml(item.speaker_label || 'unknown')}</span>
+            <span>${index + 1}. ${escapeHtml(detail.candidate.speaker_label || 'unknown')}</span>
             <span class="subtle">${Math.round((item.duration_ms || 0) / 1000)}s</span>
           </div>
-          <p class="subtle">${escapeHtml(formatDate(item.absolute_start_time))} · ${escapeHtml(item.segment_id)}</p>
+          <p class="subtle">${escapeHtml(item.segment_id || '-')}</p>
           <p>${escapeHtml(item.text || '')}</p>
           <audio controls preload="none" src="${escapeHtml(item.clip_url || '')}"></audio>
           <div class="seed-actions">
@@ -550,40 +558,40 @@
           </div>
         </article>
       `).join('')
-      : '<p class="subtle">这个批次没有候选切片。</p>';
+      : '<p class="subtle">这个候选没有切片。</p>';
   }
 
   async function loadSeedBatches() {
-    const result = await apiGet('/api/seed-batches');
-    state.seedBatches = result.data || [];
+    const result = await apiGet('/api/candidates');
+    state.candidates = result.data || [];
     renderSeedBatchList();
 
-    const stillExists = state.seedBatches.some((item) => item.id === state.selectedSeedBatchId);
+    const stillExists = state.candidates.some((item) => item.id === state.selectedCandidateId);
     if (stillExists) {
-      await loadSeedBatchDetail(state.selectedSeedBatchId);
+      await loadSeedBatchDetail(state.selectedCandidateId);
       return;
     }
-    if (state.seedBatches[0]) {
-      state.selectedSeedBatchId = state.seedBatches[0].id;
+    if (state.candidates[0]) {
+      state.selectedCandidateId = state.candidates[0].id;
       renderSeedBatchList();
-      await loadSeedBatchDetail(state.selectedSeedBatchId);
+      await loadSeedBatchDetail(state.selectedCandidateId);
       return;
     }
-    state.selectedSeedBatchId = null;
+    state.selectedCandidateId = null;
     resetSeedDetail();
   }
 
-  async function loadSeedBatchDetail(batchId) {
-    if (!batchId) return;
-    const result = await apiGet(`/api/seed-batches/${encodeURIComponent(batchId)}`);
+  async function loadSeedBatchDetail(candidateId) {
+    if (!candidateId) return;
+    const result = await apiGet(`/api/candidates/${encodeURIComponent(candidateId)}`);
     renderSeedBatchDetail(result.data);
   }
 
   async function saveSeedDecisions() {
-    if (!state.selectedSeedBatchId || !state.seedBatchDetail) return;
+    if (!state.selectedCandidateId || !state.candidateDetail) return;
     const items = Array.from(document.querySelectorAll('#seed-candidate-list [data-seed-segment-id]'));
     const decisions = items.map((node) => ({
-      segment_id: node.getAttribute('data-seed-segment-id'),
+      clip_id: node.getAttribute('data-seed-segment-id'),
       decision: node.querySelector('[data-seed-decision]').value,
       person_name: (node.querySelector('[data-seed-person-name]').value || '').trim() || null,
       note: node.querySelector('[data-seed-note]').value || null,
@@ -591,13 +599,24 @@
     const filtered = decisions.filter((item) => ['keep', 'drop', 'uncertain'].includes(item.decision));
     const invalidKeep = filtered.find((item) => item.decision === 'keep' && !item.person_name);
     if (invalidKeep) {
-      throw new Error(`segment ${invalidKeep.segment_id} 选择“保留”时必须填写人物姓名`);
+      throw new Error(`clip ${invalidKeep.clip_id} 选择“保留”时必须填写人物姓名`);
     }
-    await apiSend(`/api/seed-batches/${encodeURIComponent(state.selectedSeedBatchId)}/decisions`, 'POST', {
+    await apiSend(`/api/candidates/${encodeURIComponent(state.selectedCandidateId)}/decisions`, 'POST', {
       decisions: filtered,
     });
     await loadSeedBatches();
     window.alert(`已保存 ${filtered.length} 条确认结果`);
+  }
+
+  async function confirmSeedCandidate() {
+    if (!state.selectedCandidateId) return;
+    const result = await apiSend(`/api/candidates/${encodeURIComponent(state.selectedCandidateId)}/confirm`, 'POST', {});
+    await loadSeedBatches();
+    await loadSpeakers(false);
+    await loadConversations(false);
+    window.alert(
+      `确认完成：${result.data.personName}，${result.data.createdNewSpeaker ? '新建' : '并入'} speaker，自动归并 ${result.data.mergedCandidateCount} 个候选，更新 ${result.data.updatedSegmentCount} 条片段。`,
+    );
   }
 
   function switchTab(tabName) {
@@ -662,6 +681,7 @@
     qs('#memory-run-ai').addEventListener('click', () => runAiSupplement().catch(showError));
     qs('#seed-refresh').addEventListener('click', () => loadSeedBatches().catch(showError));
     qs('#seed-save').addEventListener('click', () => saveSeedDecisions().catch(showError));
+    qs('#seed-confirm').addEventListener('click', () => confirmSeedCandidate().catch(showError));
   }
 
   bindEvents();
