@@ -78,7 +78,10 @@ interface BlockAnalysis extends Block {
   candidates: CandidateSegment[];
   rep: CandidateSegment | null;
   candidateDuration: number;
-  clipPaths: string[];
+  clipArtifacts: Array<{
+    candidate: CandidateSegment;
+    clipPath: string;
+  }>;
   embedding: number[] | null;
   embeddingResult: EmbeddingBuildResult | null;
 }
@@ -384,7 +387,12 @@ function findBestMatch(embedding: number[], threshold: number, margin: number): 
   return findBestMatchFromRows(embedding, rows, threshold, margin);
 }
 
-async function buildClipPaths(conversationId: string, speakerLabel: string, rows: SegmentRow[], prefix: string = ''): Promise<string[]> {
+async function buildClipArtifacts(
+  conversationId: string,
+  speakerLabel: string,
+  rows: SegmentRow[],
+  prefix: string = '',
+): Promise<Array<{ candidate: CandidateSegment; clipPath: string }>> {
   const conv = db.prepare(`SELECT audio_file_path FROM conversations WHERE id = ?`).get(conversationId) as {
     audio_file_path?: string;
   } | undefined;
@@ -396,13 +404,13 @@ async function buildClipPaths(conversationId: string, speakerLabel: string, rows
 
   const candidates = pickCandidateSegments(rows);
 
-  const out: string[] = [];
+  const out: Array<{ candidate: CandidateSegment; clipPath: string }> = [];
   for (let i = 0; i < candidates.length; i++) {
     const c = candidates[i];
     const clipPath = path.join(clipsDir, `${conversationId}_${speakerLabel}_${prefix}${i}.wav`);
     try {
       await clipAudioSegment(sourceAudio, clipPath, Number(c.start_ms || 0), Number(c.end_ms || 0));
-      out.push(clipPath);
+      out.push({ candidate: c, clipPath });
     } catch (err) {
       console.warn('[SpeakerMapper] clip failed:', String((err as Error)?.message ?? err));
     }
@@ -476,19 +484,19 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
     const candidates = pickCandidateSegments(block.segments);
     const rep = candidates[0] || null;
     const candidateDuration = candidates.reduce((sum, row) => sum + row.duration, 0);
-    let clipPaths: string[] = [];
+    let clipArtifacts: Array<{ candidate: CandidateSegment; clipPath: string }> = [];
     let embedding: number[] | null = null;
     let embeddingResult: EmbeddingBuildResult | null = null;
 
     if (rep && candidateDuration >= minEnrollmentMs) {
-      clipPaths = await buildClipPaths(conversationId, block.speaker_label, candidates, `blk${i}_`);
-      if (clipPaths.length > 0) {
+      clipArtifacts = await buildClipArtifacts(conversationId, block.speaker_label, candidates, `blk${i}_`);
+      if (clipArtifacts.length > 0) {
         const textSample = block.segments.map(segment => segment.text).join('').slice(0, 500);
         embeddingResult = await buildEmbedding({
           speakerLabel: block.speaker_label === 'unknown' ? null : block.speaker_label,
           tokens: [],
           textSample,
-          audioPaths: clipPaths,
+          audioPaths: clipArtifacts.map(item => item.clipPath),
         });
         if (embeddingResult.usableForIdentity && embeddingResult.embedding.length) {
           embedding = embeddingResult.embedding;
@@ -506,7 +514,7 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
       candidates,
       rep,
       candidateDuration,
-      clipPaths,
+      clipArtifacts,
       embedding,
       embeddingResult,
     });
@@ -539,7 +547,10 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
     const representative = [...clusterBlocks]
       .sort((a, b) => b.candidateDuration - a.candidateDuration)[0];
     const rep = representative?.rep || null;
-    const repClipPath = representative?.clipPaths[0] || null;
+    const repClipPath =
+      representative?.clipArtifacts.find(item => item.candidate.id === rep?.id)?.clipPath ||
+      representative?.clipArtifacts[0]?.clipPath ||
+      null;
 
     if (!centroid.length || !representative || !rep) {
       continue;
@@ -564,17 +575,14 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
     const decisionReason: CandidateDecisionReason =
       matchEvaluation.reason || 'low_confidence';
     const clipRows = clusterBlocks.flatMap(block =>
-      block.clipPaths.map((clipPath, index) => {
-        const candidate = block.candidates[index] || null;
-        return {
-          segmentId: candidate?.id || block.rep?.id || null,
-          clipPath,
-          text: candidate?.text || block.rep?.text || null,
-          startMs: candidate?.start_ms ?? block.rep?.start_ms ?? null,
-          endMs: candidate?.end_ms ?? block.rep?.end_ms ?? null,
-          durationMs: candidate?.duration ?? null,
-        };
-      }),
+      block.clipArtifacts.map(item => ({
+        segmentId: item.candidate.id || null,
+        clipPath: item.clipPath,
+        text: item.candidate.text || null,
+        startMs: item.candidate.start_ms,
+        endMs: item.candidate.end_ms,
+        durationMs: item.candidate.duration,
+      })),
     );
     createSpeakerCandidate({
       conversationId,
