@@ -52,102 +52,151 @@
       <nav class="tabs">
         <button class="tab-button active" data-tab="speakers">发言人确认</button>
         <button class="tab-button" data-tab="conversations">对话记录</button>
-        <button class="tab-button" data-tab="seed-review">候选确认</button>
       </nav>
 
       <main>
         <section class="tab-panel active" id="tab-speakers">
-          <div class="toolbar">
-            <input id="speaker-q" type="search" placeholder="搜索姓名、标签、身份、样本文本" />
-            <select id="speaker-confirmation">
-              <option value="unconfirmed_any">全部未确认</option>
-              <option value="unconfirmed_name">未确认姓名</option>
-              <option value="unconfirmed_identity">未确认身份</option>
-              <option value="all">全部</option>
-              <option value="confirmed">已确认</option>
-            </select>
-            <input id="speaker-start" type="datetime-local" />
-            <input id="speaker-end" type="datetime-local" />
-            <select id="speaker-page-size">
-              <option value="10">每页 10 条</option>
-              <option value="20" selected>每页 20 条</option>
-              <option value="50">每页 50 条</option>
-            </select>
-            <button id="speaker-search">查询</button>
+          <div class="subtabs">
+            <button class="subtab-button active" type="button" data-speaker-view="directory">正式发言人</button>
+            <button class="subtab-button" type="button" data-speaker-view="candidates">待确认候选</button>
           </div>
 
-          <div class="two-column">
-            <section class="card list-card">
-              <div class="card-header">
-                <h2>发言人列表</h2>
-                <span id="speaker-list-count" class="subtle"></span>
-              </div>
-              <div id="speaker-list" class="list"></div>
-              <div class="pagination">
-                <button id="speaker-prev-page" type="button" class="secondary-button">上一页</button>
-                <span id="speaker-pagination" class="subtle">第 1 / 1 页</span>
-                <button id="speaker-next-page" type="button" class="secondary-button">下一页</button>
-              </div>
-            </section>
+          <section class="speaker-view active" id="speaker-view-directory">
+            <div class="toolbar">
+              <input id="speaker-q" type="search" placeholder="搜索姓名、标签、身份、样本文本" />
+              <select id="speaker-confirmation">
+                <option value="unconfirmed_any">全部未确认</option>
+                <option value="unconfirmed_name">未确认姓名</option>
+                <option value="unconfirmed_identity">未确认身份</option>
+                <option value="all">全部</option>
+                <option value="confirmed">已确认</option>
+              </select>
+              <input id="speaker-start" type="datetime-local" />
+              <input id="speaker-end" type="datetime-local" />
+              <select id="speaker-page-size">
+                <option value="10">每页 10 条</option>
+                <option value="20" selected>每页 20 条</option>
+                <option value="50">每页 50 条</option>
+              </select>
+              <button id="speaker-search">查询</button>
+            </div>
 
-            <section class="card detail-card">
-              <div id="speaker-empty" class="empty-state">选择一个发言人后查看详情和确认信息。</div>
-              <div id="speaker-detail" class="detail hidden">
-                <div class="detail-header">
-                  <div>
-                    <p class="eyebrow">发言人详情</p>
-                    <h2 id="speaker-detail-title">-</h2>
+            <div class="two-column">
+              <section class="card list-card">
+                <div class="card-header">
+                  <h2>发言人列表</h2>
+                  <span id="speaker-list-count" class="subtle"></span>
+                </div>
+                <div id="speaker-list" class="list"></div>
+                <div class="pagination">
+                  <button id="speaker-prev-page" type="button" class="secondary-button">上一页</button>
+                  <span id="speaker-pagination" class="subtle">第 1 / 1 页</span>
+                  <button id="speaker-next-page" type="button" class="secondary-button">下一页</button>
+                </div>
+              </section>
+
+              <section class="card detail-card">
+                <div id="speaker-empty" class="empty-state">选择一个发言人后查看详情和确认信息。</div>
+                <div id="speaker-detail" class="detail hidden">
+                  <div class="detail-header">
+                    <div>
+                      <p class="eyebrow">发言人详情</p>
+                      <h2 id="speaker-detail-title">-</h2>
+                    </div>
+                    <div id="speaker-detail-badges" class="badge-row"></div>
                   </div>
-                  <div id="speaker-detail-badges" class="badge-row"></div>
-                </div>
 
-                <div class="meta-grid">
-                  <div><span class="meta-label">ID</span><span id="speaker-id"></span></div>
-                  <div><span class="meta-label">首次出现</span><span id="speaker-first-seen"></span></div>
-                  <div><span class="meta-label">最近出现</span><span id="speaker-last-seen"></span></div>
-                  <div><span class="meta-label">会话数</span><span id="speaker-conv-count"></span></div>
-                  <div><span class="meta-label">片段数</span><span id="speaker-seg-count"></span></div>
-                </div>
-
-                <div class="detail-section">
-                  <h3>样本音频</h3>
-                  <audio id="speaker-audio" controls class="hidden"></audio>
-                  <p id="speaker-audio-empty" class="subtle">暂无可播放样本。</p>
-                </div>
-
-                <div class="detail-section">
-                  <h3>代表性片段</h3>
-                  <div id="speaker-representative-segments" class="segment-list"></div>
-                </div>
-
-                <div class="detail-section">
-                  <h3>最近会话</h3>
-                  <div id="speaker-recent-conversations" class="segment-list"></div>
-                </div>
-
-                <form id="speaker-form" class="detail-section form-grid">
-                  <h3>确认信息</h3>
-                  <label>
-                    <span>姓名</span>
-                    <input id="speaker-form-name" type="text" placeholder="例如：张三" />
-                  </label>
-                  <label>
-                    <span>身份</span>
-                    <select id="speaker-form-identity">
-                      <option value="">未确认</option>
-                    </select>
-                  </label>
-                  <label class="full-width">
-                    <span>备注</span>
-                    <textarea id="speaker-form-notes" rows="4" placeholder="补充说明"></textarea>
-                  </label>
-                  <div class="actions full-width">
-                    <button type="submit">保存确认</button>
+                  <div class="meta-grid">
+                    <div><span class="meta-label">ID</span><span id="speaker-id"></span></div>
+                    <div><span class="meta-label">首次出现</span><span id="speaker-first-seen"></span></div>
+                    <div><span class="meta-label">最近出现</span><span id="speaker-last-seen"></span></div>
+                    <div><span class="meta-label">会话数</span><span id="speaker-conv-count"></span></div>
+                    <div><span class="meta-label">片段数</span><span id="speaker-seg-count"></span></div>
                   </div>
-                </form>
-              </div>
-            </section>
-          </div>
+
+                  <div class="detail-section">
+                    <h3>样本音频</h3>
+                    <audio id="speaker-audio" controls class="hidden"></audio>
+                    <p id="speaker-audio-empty" class="subtle">暂无可播放样本。</p>
+                  </div>
+
+                  <div class="detail-section">
+                    <h3>代表性片段</h3>
+                    <div id="speaker-representative-segments" class="segment-list"></div>
+                  </div>
+
+                  <div class="detail-section">
+                    <h3>最近会话</h3>
+                    <div id="speaker-recent-conversations" class="segment-list"></div>
+                  </div>
+
+                  <form id="speaker-form" class="detail-section form-grid">
+                    <h3>确认信息</h3>
+                    <label>
+                      <span>姓名</span>
+                      <input id="speaker-form-name" type="text" placeholder="例如：张三" />
+                    </label>
+                    <label>
+                      <span>身份</span>
+                      <select id="speaker-form-identity">
+                        <option value="">未确认</option>
+                      </select>
+                    </label>
+                    <label class="full-width">
+                      <span>备注</span>
+                      <textarea id="speaker-form-notes" rows="4" placeholder="补充说明"></textarea>
+                    </label>
+                    <div class="actions full-width">
+                      <button type="submit">保存确认</button>
+                    </div>
+                  </form>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <section class="speaker-view" id="speaker-view-candidates">
+            <div class="toolbar">
+              <button id="seed-refresh">刷新候选</button>
+              <span id="seed-batch-count" class="subtle">共 0 条</span>
+            </div>
+
+            <div class="two-column">
+              <section class="card list-card">
+                <div class="card-header">
+                  <h2>待确认候选</h2>
+                </div>
+                <div id="seed-batch-list" class="list"></div>
+              </section>
+
+              <section class="card detail-card">
+                <div id="seed-empty" class="empty-state">请选择一个候选人，查看切片文本和音频。</div>
+                <div id="seed-detail" class="detail hidden">
+                  <div class="detail-header">
+                    <div>
+                      <p class="eyebrow">候选确认</p>
+                      <h2 id="seed-title">-</h2>
+                    </div>
+                    <div class="actions">
+                      <button id="seed-save" type="button">保存确认结果</button>
+                      <button id="seed-confirm" type="button">确认并归并</button>
+                    </div>
+                  </div>
+                  <div class="meta-grid">
+                    <div><span class="meta-label">候选 ID</span><span id="seed-batch-id"></span></div>
+                    <div><span class="meta-label">会话 ID</span><span id="seed-session-id"></span></div>
+                    <div><span class="meta-label">会话内编号</span><span id="seed-speaker-count"></span></div>
+                    <div><span class="meta-label">切片数</span><span id="seed-candidate-count"></span></div>
+                  </div>
+                  <div class="detail-section">
+                    <h3>候选切片（文本 + 音频）</h3>
+                    <p class="subtle">请先听音频并看文本，再标注“这条切片是谁”。当你选择“保留”时，人物姓名必填。</p>
+                    <div id="seed-candidate-list" class="segment-list"></div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </section>
         </section>
 
         <section class="tab-panel" id="tab-conversations">
@@ -227,48 +276,6 @@
           </div>
         </section>
 
-        <section class="tab-panel" id="tab-seed-review">
-          <div class="toolbar">
-            <button id="seed-refresh">刷新候选</button>
-            <span id="seed-batch-count" class="subtle">共 0 条</span>
-          </div>
-
-          <div class="two-column">
-            <section class="card list-card">
-              <div class="card-header">
-                <h2>待确认候选</h2>
-              </div>
-              <div id="seed-batch-list" class="list"></div>
-            </section>
-
-            <section class="card detail-card">
-              <div id="seed-empty" class="empty-state">请选择一个候选人，查看切片文本和音频。</div>
-              <div id="seed-detail" class="detail hidden">
-                <div class="detail-header">
-                  <div>
-                    <p class="eyebrow">候选确认</p>
-                    <h2 id="seed-title">-</h2>
-                  </div>
-                  <div class="actions">
-                    <button id="seed-save" type="button">保存确认结果</button>
-                    <button id="seed-confirm" type="button">确认并归并</button>
-                  </div>
-                </div>
-                <div class="meta-grid">
-                  <div><span class="meta-label">候选 ID</span><span id="seed-batch-id"></span></div>
-                  <div><span class="meta-label">会话 ID</span><span id="seed-session-id"></span></div>
-                  <div><span class="meta-label">会话内编号</span><span id="seed-speaker-count"></span></div>
-                  <div><span class="meta-label">切片数</span><span id="seed-candidate-count"></span></div>
-                </div>
-                <div class="detail-section">
-                  <h3>候选切片（文本 + 音频）</h3>
-                  <p class="subtle">请先听音频并看文本，再标注“这条切片是谁”。当你选择“保留”时，人物姓名必填。</p>
-                  <div id="seed-candidate-list" class="segment-list"></div>
-                </div>
-              </div>
-            </section>
-          </div>
-        </section>
       </main>
     </div>
 

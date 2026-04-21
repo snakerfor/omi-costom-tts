@@ -1,5 +1,7 @@
 (function () {
   const state = {
+    activeTab: 'speakers',
+    speakerView: 'directory',
     identityOptions: [],
     speakers: [],
     speakerPagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 },
@@ -619,7 +621,18 @@
     );
   }
 
+  function switchSpeakerView(viewName) {
+    state.speakerView = viewName;
+    document.querySelectorAll('.subtab-button').forEach((button) => {
+      button.classList.toggle('active', button.getAttribute('data-speaker-view') === viewName);
+    });
+    document.querySelectorAll('.speaker-view').forEach((panel) => {
+      panel.classList.toggle('active', panel.id === `speaker-view-${viewName}`);
+    });
+  }
+
   function switchTab(tabName) {
+    state.activeTab = tabName;
     document.querySelectorAll('.tab-button').forEach((button) => {
       button.classList.toggle('active', button.getAttribute('data-tab') === tabName);
     });
@@ -635,6 +648,9 @@
   function bindEvents() {
     document.querySelectorAll('.tab-button').forEach((button) => {
       button.addEventListener('click', () => switchTab(button.getAttribute('data-tab')));
+    });
+    document.querySelectorAll('.subtab-button').forEach((button) => {
+      button.addEventListener('click', () => switchSpeakerView(button.getAttribute('data-speaker-view')));
     });
 
     qs('#speaker-search').addEventListener('click', () => loadSpeakers(true).catch(showError));
@@ -685,5 +701,7 @@
   }
 
   bindEvents();
+  switchTab(state.activeTab);
+  switchSpeakerView(state.speakerView);
   Promise.all([loadIdentityOptions(), loadSpeakers(true), loadConversations(true), loadMemoryStatus(), loadSeedBatches()]).catch(showError);
 })();
