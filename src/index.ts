@@ -85,7 +85,13 @@ function toMediaUrl(filePath: string | null | undefined): string | null {
     const resolvedRoot = path.resolve(root);
     const relative = path.relative(resolvedRoot, resolved);
     if (!relative.startsWith('..') && !path.isAbsolute(relative)) {
-      return `/media/${bucket}/${relative.split(path.sep).join('/')}`;
+      const urlPath = `/media/${bucket}/${relative.split(path.sep).join('/')}`;
+      try {
+        const stat = fs.statSync(resolved);
+        return `${urlPath}?v=${Math.floor(stat.mtimeMs)}`;
+      } catch {
+        return urlPath;
+      }
     }
   }
   return null;
