@@ -54,6 +54,7 @@ cat > .env << 'EOF'
 # 必需
 SONIOX_API_KEY=your_soniox_api_key_here
 ACCESS_TOKENS=token-device-a,token-device-b
+KNOWLEDGE_API_TOKENS=knowledge-read-token-1,knowledge-read-token-2
 
 # 可选
 PORT=28089
@@ -68,6 +69,8 @@ EOF
 - `DATA_ROOT` 建议显式配置，运行时数据不要和 git 工作树混放
 - `DB_PATH` 建议显式配置，避免服务默认写入当前工作目录下的 `app.db`
 - 音频、raw/finalized/preview 结果、桌面视频 chunk 默认都会跟随 `DATA_ROOT`
+- `KNOWLEDGE_API_TOKENS` 用于 `/api/knowledge/*` 路由鉴权（`Authorization: Bearer <token>`）；未配置时会回退 `ACCESS_TOKENS`
+- 建议将 `ACCESS_TOKENS`（设备写入链路）与 `KNOWLEDGE_API_TOKENS`（知识查询链路）分开，便于最小权限与轮换
 
 ### 2.1 现有服务器从旧结构升级
 

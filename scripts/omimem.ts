@@ -1,8 +1,15 @@
 import 'dotenv/config';
-import { db, initDb } from '../src/db';
 import { isAIAvailable, chatCompletion } from '../src/services/minimax-client';
 
-// ─── arg parsing ───
+let localDb: any = null;
+
+function dbConn(): any {
+  if (localDb) return localDb;
+  const dbModule = require('../src/db') as { db: any; initDb: () => void };
+  localDb = dbModule.db;
+  dbModule.initDb();
+  return localDb;
+}
 
 function getCommand(): string {
   return process.argv[2] || 'help';
@@ -16,35 +23,74 @@ function getFlag(name: string): string | undefined {
   return undefined;
 }
 
+function hasFlag(name: string): boolean {
+  return process.argv.includes(`--${name}`);
+}
+
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-// ─── timeline ───
+function getRemoteBaseUrl(): string | undefined {
+  return getFlag('base-url') || process.env.OMIMEM_BASE_URL || undefined;
+}
 
-function cmdTimeline(): void {
+function getApiToken(): string | undefined {
+  return getFlag('api-token') || process.env.OMIMEM_API_TOKEN || undefined;
+}
+
+function useRemoteApi(): boolean {
+  return Boolean(getRemoteBaseUrl()) && !hasFlag('local-db');
+}
+
+function toUrl(baseUrl: string, path: string): URL {
+  const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+  return new URL(path.replace(/^\/+/, ''), normalizedBase);
+}
+
+async function apiGet<T>(path: string, query?: Record<string, string | number | undefined>): Promise<T> {
+  const baseUrl = getRemoteBaseUrl();
+  if (!baseUrl) throw new Error('OMIMEM_BASE_URL is required for remote mode');
+
+  const url = toUrl(baseUrl, path);
+  if (query) {
+    for (const [key, value] of Object.entries(query)) {
+      if (value == null) continue;
+      const stringValue = String(value).trim();
+      if (!stringValue) continue;
+      url.searchParams.set(key, stringValue);
+    }
+  }
+
+  const token = getApiToken();
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(url.toString(), { headers });
+  const rawText = await response.text();
+
+  let body: any = {};
+  try {
+    body = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    throw new Error(`API returned non-JSON response (${response.status})`);
+  }
+
+  if (!response.ok || body?.ok === false) {
+    const message = body?.error || `HTTP ${response.status}`;
+    throw new Error(`API request failed: ${message}`);
+  }
+
+  return body.data as T;
+}
+
+async function cmdTimeline(): Promise<void> {
   const from = getFlag('from') || `${todayISO()}T00:00:00.000Z`;
   const to = getFlag('to') || `${todayISO()}T23:59:59.999Z`;
   const limit = parseInt(getFlag('limit') || '100', 10);
   const eventType = getFlag('type');
 
-  let sql = `
-    SELECT id, event_type, started_at, ended_at,
-           content_text, title, participants_json, source_table, source_row_id
-    FROM knowledge_events
-    WHERE started_at >= ? AND started_at <= ?
-  `;
-  const params: any[] = [from, to];
-
-  if (eventType) {
-    sql += ' AND event_type = ?';
-    params.push(eventType);
-  }
-
-  sql += ' ORDER BY started_at ASC LIMIT ?';
-  params.push(limit);
-
-  const rows = db.prepare(sql).all(...params) as Array<{
+  let rows: Array<{
     id: string;
     event_type: string;
     started_at: string;
@@ -55,6 +101,34 @@ function cmdTimeline(): void {
     source_table: string;
     source_row_id: string;
   }>;
+
+  if (useRemoteApi()) {
+    const data = await apiGet<{ events: typeof rows }>('/api/knowledge/timeline', {
+      from,
+      to,
+      limit,
+      type: eventType,
+    });
+    rows = data.events;
+  } else {
+    let sql = `
+      SELECT id, event_type, started_at, ended_at,
+             content_text, title, participants_json, source_table, source_row_id
+      FROM knowledge_events
+      WHERE started_at >= ? AND started_at <= ?
+    `;
+    const params: any[] = [from, to];
+
+    if (eventType) {
+      sql += ' AND event_type = ?';
+      params.push(eventType);
+    }
+
+    sql += ' ORDER BY started_at ASC LIMIT ?';
+    params.push(limit);
+
+    rows = dbConn().prepare(sql).all(...params) as typeof rows;
+  }
 
   if (!rows.length) {
     console.log(`No events found between ${from} and ${to}`);
@@ -79,30 +153,18 @@ function cmdTimeline(): void {
   console.log(`\n  Total: ${rows.length} events`);
 }
 
-// ─── conversations (from knowledge_conversations table) ───
-
-function cmdConversations(): void {
+async function cmdConversations(): Promise<void> {
   const from = getFlag('from') || `${todayISO()}T00:00:00.000Z`;
   const to = getFlag('to') || `${todayISO()}T23:59:59.999Z`;
   const limit = parseInt(getFlag('limit') || '20', 10);
   const convId = getFlag('id');
 
   if (convId) {
-    showConversationDetail(convId);
+    await showConversationDetail(convId);
     return;
   }
 
-  const rows = db.prepare(`
-    SELECT
-      kc.id, kc.started_at, kc.ended_at, kc.primary_source,
-      kc.participants_json, kc.title, kc.summary,
-      kc.topics_json, kc.action_items_json, kc.review_status,
-      (SELECT COUNT(*) FROM knowledge_conversation_items WHERE conversation_id = kc.id) AS event_count
-    FROM knowledge_conversations kc
-    WHERE kc.started_at >= ? AND kc.started_at <= ?
-    ORDER BY kc.started_at ASC
-    LIMIT ?
-  `).all(from, to, limit) as Array<{
+  let rows: Array<{
     id: string;
     started_at: string;
     ended_at: string | null;
@@ -115,6 +177,23 @@ function cmdConversations(): void {
     review_status: string;
     event_count: number;
   }>;
+
+  if (useRemoteApi()) {
+    const data = await apiGet<{ conversations: typeof rows }>('/api/knowledge/conversations', { from, to, limit });
+    rows = data.conversations;
+  } else {
+    rows = dbConn().prepare(`
+      SELECT
+        kc.id, kc.started_at, kc.ended_at, kc.primary_source,
+        kc.participants_json, kc.title, kc.summary,
+        kc.topics_json, kc.action_items_json, kc.review_status,
+        (SELECT COUNT(*) FROM knowledge_conversation_items WHERE conversation_id = kc.id) AS event_count
+      FROM knowledge_conversations kc
+      WHERE kc.started_at >= ? AND kc.started_at <= ?
+      ORDER BY kc.started_at ASC
+      LIMIT ?
+    `).all(from, to, limit) as typeof rows;
+  }
 
   if (!rows.length) {
     console.log(`No conversations found between ${from} and ${to}`);
@@ -163,10 +242,48 @@ function cmdConversations(): void {
   }
 }
 
-function showConversationDetail(convId: string): void {
-  const conv = db.prepare(`
-    SELECT * FROM knowledge_conversations WHERE id = ?
-  `).get(convId) as any;
+async function showConversationDetail(convId: string): Promise<void> {
+  if (useRemoteApi()) {
+    const data = await apiGet<{
+      conversation: any;
+      events: Array<{
+        item_order: number;
+        event_type: string;
+        started_at: string;
+        content_text: string | null;
+        event_title: string | null;
+        participants_json: string | null;
+      }>;
+    }>(`/api/knowledge/conversations/${encodeURIComponent(convId)}`);
+
+    const conv = data.conversation;
+    const items = data.events;
+
+    console.log(`Conversation: ${conv.id}\n`);
+    console.log(`  Time:    ${conv.started_at} → ${conv.ended_at || '?'}`);
+    console.log(`  Source:  ${conv.primary_source}`);
+    console.log(`  Status:  ${conv.review_status}`);
+    if (conv.title) console.log(`  Title:   ${conv.title}`);
+    if (conv.participants_json) console.log(`  Speakers: ${conv.participants_json}`);
+    if (conv.summary) console.log(`  Summary: ${conv.summary}`);
+    if (conv.topics_json) console.log(`  Topics:  ${conv.topics_json}`);
+    if (conv.action_items_json) console.log(`  Actions: ${conv.action_items_json}`);
+
+    console.log(`\n  Events (${items.length}):\n`);
+    for (const item of items) {
+      const time = item.started_at.slice(11, 19);
+      const speaker = parseSpeaker(item.participants_json);
+      const text = truncate(item.content_text || item.event_title || '', 100);
+      if (speaker) {
+        console.log(`    ${time} [${item.event_type}] ${speaker}: ${text}`);
+      } else {
+        console.log(`    ${time} [${item.event_type}] ${text}`);
+      }
+    }
+    return;
+  }
+
+  const conv = dbConn().prepare(`SELECT * FROM knowledge_conversations WHERE id = ?`).get(convId) as any;
 
   if (!conv) {
     console.log(`Conversation ${convId} not found.`);
@@ -183,7 +300,7 @@ function showConversationDetail(convId: string): void {
   if (conv.topics_json) console.log(`  Topics:  ${conv.topics_json}`);
   if (conv.action_items_json) console.log(`  Actions: ${conv.action_items_json}`);
 
-  const items = db.prepare(`
+  const items = dbConn().prepare(`
     SELECT ki.item_order, ke.event_type, ke.started_at, ke.content_text,
            ke.title AS event_title, ke.participants_json
     FROM knowledge_conversation_items ki
@@ -212,35 +329,17 @@ function showConversationDetail(convId: string): void {
   }
 }
 
-// ─── memories ───
-
-function cmdMemories(): void {
+async function cmdMemories(): Promise<void> {
   const category = getFlag('category');
   const limit = parseInt(getFlag('limit') || '50', 10);
-  const showCandidates = process.argv.includes('--candidates');
+  const showCandidates = hasFlag('candidates');
 
   if (showCandidates) {
-    showMemoryCandidates(category, limit);
+    await showMemoryCandidates(category, limit);
     return;
   }
 
-  let sql = `
-    SELECT id, canonical_text, category, subject_key, confidence,
-           source_refs_json, first_observed_at, last_observed_at, status
-    FROM knowledge_memories
-    WHERE status = 'active'
-  `;
-  const params: any[] = [];
-
-  if (category) {
-    sql += ' AND category = ?';
-    params.push(category);
-  }
-
-  sql += ' ORDER BY last_observed_at DESC LIMIT ?';
-  params.push(limit);
-
-  const rows = db.prepare(sql).all(...params) as Array<{
+  let rows: Array<{
     id: string;
     canonical_text: string;
     category: string;
@@ -251,6 +350,38 @@ function cmdMemories(): void {
     last_observed_at: string | null;
     status: string;
   }>;
+  let totalStats: Array<{ category: string; cnt: number }>;
+
+  if (useRemoteApi()) {
+    const data = await apiGet<{ memories: typeof rows; categoryStats: Array<{ category: string; cnt: number }> }>('/api/knowledge/memories', {
+      category,
+      limit,
+    });
+    rows = data.memories;
+    totalStats = data.categoryStats;
+  } else {
+    let sql = `
+      SELECT id, canonical_text, category, subject_key, confidence,
+             source_refs_json, first_observed_at, last_observed_at, status
+      FROM knowledge_memories
+      WHERE status = 'active'
+    `;
+    const params: any[] = [];
+
+    if (category) {
+      sql += ' AND category = ?';
+      params.push(category);
+    }
+
+    sql += ' ORDER BY last_observed_at DESC LIMIT ?';
+    params.push(limit);
+
+    rows = dbConn().prepare(sql).all(...params) as typeof rows;
+
+    totalStats = dbConn().prepare(`
+      SELECT category, COUNT(*) AS cnt FROM knowledge_memories WHERE status = 'active' GROUP BY category ORDER BY cnt DESC
+    `).all() as Array<{ category: string; cnt: number }>;
+  }
 
   if (!rows.length) {
     console.log('No active memories found.');
@@ -273,32 +404,12 @@ function cmdMemories(): void {
     console.log(`    first seen: ${observed}  id: ${row.id}`);
   }
 
-  const totalStats = db.prepare(`
-    SELECT category, COUNT(*) AS cnt FROM knowledge_memories WHERE status = 'active' GROUP BY category ORDER BY cnt DESC
-  `).all() as Array<{ category: string; cnt: number }>;
   console.log('\nSummary:');
   for (const s of totalStats) console.log(`  ${s.category}: ${s.cnt}`);
 }
 
-function showMemoryCandidates(category: string | undefined, limit: number): void {
-  let sql = `
-    SELECT mc.id, mc.candidate_text, mc.category, mc.confidence, mc.status,
-           mc.conversation_id, mc.created_at
-    FROM knowledge_memory_candidates mc
-  `;
-  const params: any[] = [];
-  const clauses: string[] = [];
-
-  if (category) {
-    clauses.push('mc.category = ?');
-    params.push(category);
-  }
-
-  if (clauses.length) sql += ' WHERE ' + clauses.join(' AND ');
-  sql += ' ORDER BY mc.created_at DESC LIMIT ?';
-  params.push(limit);
-
-  const rows = db.prepare(sql).all(...params) as Array<{
+async function showMemoryCandidates(category: string | undefined, limit: number): Promise<void> {
+  let rows: Array<{
     id: string;
     candidate_text: string;
     category: string;
@@ -307,6 +418,30 @@ function showMemoryCandidates(category: string | undefined, limit: number): void
     conversation_id: string;
     created_at: string;
   }>;
+
+  if (useRemoteApi()) {
+    const data = await apiGet<{ candidates: typeof rows }>('/api/knowledge/memories/candidates', { category, limit });
+    rows = data.candidates;
+  } else {
+    let sql = `
+      SELECT mc.id, mc.candidate_text, mc.category, mc.confidence, mc.status,
+             mc.conversation_id, mc.created_at
+      FROM knowledge_memory_candidates mc
+    `;
+    const params: any[] = [];
+    const clauses: string[] = [];
+
+    if (category) {
+      clauses.push('mc.category = ?');
+      params.push(category);
+    }
+
+    if (clauses.length) sql += ' WHERE ' + clauses.join(' AND ');
+    sql += ' ORDER BY mc.created_at DESC LIMIT ?';
+    params.push(limit);
+
+    rows = dbConn().prepare(sql).all(...params) as typeof rows;
+  }
 
   if (!rows.length) {
     console.log('No memory candidates found.');
@@ -322,22 +457,25 @@ function showMemoryCandidates(category: string | undefined, limit: number): void
   }
 }
 
-// ─── ask ───
-
 async function cmdAsk(): Promise<void> {
+  if (useRemoteApi()) {
+    console.log('Remote API mode does not support `ask` yet. Use --local-db for local retrieval + MiniMax answering.');
+    return;
+  }
+
   const question = process.argv.slice(3).filter(a => !a.startsWith('--')).join(' ');
   if (!question) {
     console.log('Usage: omimem ask "your question here"');
     return;
   }
 
-  const memories = db.prepare(`
+  const memories = dbConn().prepare(`
     SELECT canonical_text, category, confidence
     FROM knowledge_memories WHERE status = 'active'
     ORDER BY last_observed_at DESC LIMIT 30
   `).all() as Array<{ canonical_text: string; category: string; confidence: number | null }>;
 
-  const recentConvs = db.prepare(`
+  const recentConvs = dbConn().prepare(`
     SELECT title, summary, started_at, participants_json
     FROM knowledge_conversations
     ORDER BY started_at DESC LIMIT 10
@@ -399,47 +537,51 @@ Rules:
   }
 }
 
-// ─── stats ───
-
-function cmdStats(): void {
-  const stats = db.prepare(`
-    SELECT event_type, COUNT(*) AS cnt,
-           MIN(started_at) AS earliest,
-           MAX(started_at) AS latest
-    FROM knowledge_events
-    GROUP BY event_type
-    ORDER BY cnt DESC
-  `).all() as Array<{
+async function cmdStats(): Promise<void> {
+  let stats: Array<{
     event_type: string;
     cnt: number;
-    earliest: string;
-    latest: string;
+    earliest: string | null;
+    latest: string | null;
   }>;
+  let total: number;
 
-  const total = db.prepare('SELECT COUNT(*) AS total FROM knowledge_events').get() as { total: number };
+  if (useRemoteApi()) {
+    const data = await apiGet<{
+      total: number;
+      byType: Array<{ event_type: string; cnt: number; earliest: string | null; latest: string | null }>;
+    }>('/api/knowledge/stats');
+    stats = data.byType;
+    total = data.total;
+  } else {
+    stats = dbConn().prepare(`
+      SELECT event_type, COUNT(*) AS cnt,
+             MIN(started_at) AS earliest,
+             MAX(started_at) AS latest
+      FROM knowledge_events
+      GROUP BY event_type
+      ORDER BY cnt DESC
+    `).all() as typeof stats;
+
+    total = (dbConn().prepare('SELECT COUNT(*) AS total FROM knowledge_events').get() as { total: number }).total;
+  }
 
   console.log('Knowledge Events Stats\n');
   for (const s of stats) {
-    console.log(`  ${s.event_type.padEnd(22)} ${String(s.cnt).padStart(6)}  (${s.earliest.slice(0, 10)} ~ ${s.latest.slice(0, 10)})`);
+    const earliest = s.earliest ? s.earliest.slice(0, 10) : '?';
+    const latest = s.latest ? s.latest.slice(0, 10) : '?';
+    console.log(`  ${s.event_type.padEnd(22)} ${String(s.cnt).padStart(6)}  (${earliest} ~ ${latest})`);
   }
-  console.log(`  ${'TOTAL'.padEnd(22)} ${String(total.total).padStart(6)}`);
+  console.log(`  ${'TOTAL'.padEnd(22)} ${String(total).padStart(6)}`);
 }
 
-// ─── export ───
-
-function cmdExport(): void {
+async function cmdExport(): Promise<void> {
   const day = getFlag('day') || todayISO();
   const format = getFlag('format') || 'md';
   const from = `${day}T00:00:00.000Z`;
   const to = `${day}T23:59:59.999Z`;
 
-  const rows = db.prepare(`
-    SELECT id, event_type, started_at, ended_at,
-           content_text, title, participants_json, source_table
-    FROM knowledge_events
-    WHERE started_at >= ? AND started_at <= ?
-    ORDER BY started_at ASC
-  `).all(from, to) as Array<{
+  let rows: Array<{
     id: string;
     event_type: string;
     started_at: string;
@@ -449,6 +591,19 @@ function cmdExport(): void {
     participants_json: string | null;
     source_table: string;
   }>;
+
+  if (useRemoteApi()) {
+    const data = await apiGet<{ day: string; events: typeof rows }>('/api/knowledge/export', { day });
+    rows = data.events;
+  } else {
+    rows = dbConn().prepare(`
+      SELECT id, event_type, started_at, ended_at,
+             content_text, title, participants_json, source_table
+      FROM knowledge_events
+      WHERE started_at >= ? AND started_at <= ?
+      ORDER BY started_at ASC
+    `).all(from, to) as typeof rows;
+  }
 
   if (format === 'json') {
     console.log(JSON.stringify(rows, null, 2));
@@ -482,8 +637,6 @@ function cmdExport(): void {
   }
 }
 
-// ─── helpers ───
-
 function parseSpeaker(json: string | null): string | null {
   if (!json) return null;
   try {
@@ -500,8 +653,6 @@ function truncate(text: string, maxLen: number): string {
   return oneLine.slice(0, maxLen - 3) + '...';
 }
 
-// ─── help ───
-
 function printHelp(): void {
   console.log(`
 omimem — Personal Knowledge Layer CLI
@@ -510,59 +661,54 @@ Commands:
   timeline       Show unified event timeline
   conversations  Show aggregated conversations (from knowledge_conversations)
   memories       Show long-term memories
-  ask            Ask a question against your knowledge base
+  ask            Ask a question against your knowledge base (local mode)
   stats          Show knowledge_events statistics
   export         Export a day's events as markdown or JSON
 
 Options:
-  --from <ISO>      Start time (default: today 00:00)
-  --to <ISO>        End time   (default: today 23:59)
-  --limit <n>       Max results (default varies)
-  --type <type>     Filter event_type (timeline only)
-  --id <id>         Show conversation detail (conversations only)
-  --category <cat>  Filter memory category (memories only)
-  --candidates      Show candidates instead of formal memories
-  --day <date>      Date for export (default: today)
-  --format <fmt>    md or json (export only)
+  --from <ISO>        Start time (default: today 00:00)
+  --to <ISO>          End time   (default: today 23:59)
+  --limit <n>         Max results (default varies)
+  --type <type>       Filter event_type (timeline only)
+  --id <id>           Show conversation detail (conversations only)
+  --category <cat>    Filter memory category (memories only)
+  --candidates        Show candidates instead of formal memories
+  --day <date>        Date for export (default: today)
+  --format <fmt>      md or json (export only)
+  --base-url <url>    API base URL (or OMIMEM_BASE_URL)
+  --api-token <tok>   API token (or OMIMEM_API_TOKEN)
+  --local-db          Force local SQLite mode even if OMIMEM_BASE_URL is set
 
 Examples:
-  npx ts-node scripts/omimem.ts timeline
-  npx ts-node scripts/omimem.ts timeline --from 2026-04-12T00:00:00Z --to 2026-04-12T23:59:59Z
-  npx ts-node scripts/omimem.ts conversations --from 2026-04-01 --to 2026-04-12
-  npx ts-node scripts/omimem.ts conversations --id kc_abc123
-  npx ts-node scripts/omimem.ts memories
-  npx ts-node scripts/omimem.ts memories --category person
-  npx ts-node scripts/omimem.ts memories --candidates
-  npx ts-node scripts/omimem.ts ask "我最近在推进什么事情？"
-  npx ts-node scripts/omimem.ts stats
-  npx ts-node scripts/omimem.ts export --day 2026-04-12 --format md
+  npm run omimem -- timeline
+  OMIMEM_BASE_URL=https://example.com OMIMEM_API_TOKEN=token npm run omimem -- stats
+  npm run omimem -- conversations --id kc_abc123
+  npm run omimem -- memories --category person
+  npm run omimem -- export --day 2026-04-12 --format json
 `);
 }
 
-// ─── main ───
-
 async function main(): Promise<void> {
-  initDb();
 
   const cmd = getCommand();
   switch (cmd) {
     case 'timeline':
-      cmdTimeline();
+      await cmdTimeline();
       break;
     case 'conversations':
-      cmdConversations();
+      await cmdConversations();
       break;
     case 'memories':
-      cmdMemories();
+      await cmdMemories();
       break;
     case 'ask':
       await cmdAsk();
       break;
     case 'stats':
-      cmdStats();
+      await cmdStats();
       break;
     case 'export':
-      cmdExport();
+      await cmdExport();
       break;
     default:
       printHelp();

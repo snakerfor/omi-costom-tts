@@ -33,24 +33,33 @@
 
 ### 阶段 A：API 面与鉴权（服务端，本仓库）
 
-- [ ] **A1. 盘点**：列出 `omimem` CLI 现有子命令（`timeline`、`conversations`、`memories`、`stats`、`export`、`ask` 等）与已有 `/api/*` 的对应关系；标出**缺接口**与**仅 DB 有**的能力。
-- [ ] **A2. 鉴权模型**：选定一种或组合（例如：Header `Authorization: Bearer <token>`，与现有 `ACCESS_TOKENS` 对齐或单独 `KNOWLEDGE_API_TOKENS`）；明确哪些路由必须鉴权（至少所有「读知识/对话/事件」的 GET）。
-- [ ] **A3. 实现**：为缺失的**只读**能力补 REST 路由（建议 JSON、分页、时间过滤与 CLI 参数对齐）；在 `handleApiRequest`（或中间件）对知识相关路径统一校验 token。
-- [ ] **A4. 文档**：在 `DEPLOY.md` 或单独 `doc/` 中说明：如何生成/轮换 API Token、如何 HTTPS 暴露、**勿**将管理接口无鉴权暴露公网。
+- [x] **A1. 盘点**：CLI/API 对照如下（2026-04-21）：
+  | CLI 子命令 | API 路由 | 状态 |
+  |---|---|---|
+  | `timeline` | `GET /api/knowledge/timeline` | 已对齐 |
+  | `conversations` | `GET /api/knowledge/conversations` + `GET /api/knowledge/conversations/:id` | 已对齐 |
+  | `memories` | `GET /api/knowledge/memories` | 已对齐 |
+  | `memories --candidates` | `GET /api/knowledge/memories/candidates` | 已对齐 |
+  | `stats` | `GET /api/knowledge/stats` | 已对齐 |
+  | `export` | `GET /api/knowledge/export` | 已对齐 |
+  | `ask` | （暂无远程 API） | 保持本地模式/后置到 A5 |
+- [x] **A2. 鉴权模型**：已实现 `Authorization: Bearer <token>`，优先 `KNOWLEDGE_API_TOKENS`，未配置时回退 `ACCESS_TOKENS`；`/api/knowledge/*` 路由统一鉴权（2026-04-21）。
+- [x] **A3. 实现**：已补 `timeline/conversations/memories/stats/export` 等只读 REST 路由，并统一接入知识路径 token 校验（2026-04-21）。
+- [x] **A4. 文档**：已在 `DEPLOY.md` 增补 `KNOWLEDGE_API_TOKENS` 配置说明与鉴权建议（2026-04-21）。
 - [ ] **A5. `ask`（可选/后置）**：若需远程自然语言问答，单独 PR：**服务端代理 MiniMax** 或 **仅返回检索上下文由客户端调模型**；需限流与密钥不落日志。
 
 ### 阶段 B：CLI 工程形态（可与 A 并行设计）
 
 - [ ] **B1. 形态**：决定 **monorepo 子包**（如 `packages/omimem-cli`）还是 **独立仓库**；`package.json` 的 `bin`、全局命令名（如 `omimem`）。
-- [ ] **B2. 配置**：支持环境变量 `OMIMEM_BASE_URL`、`OMIMEM_API_TOKEN`（名称可再定）；可选配置文件 `~/.config/omimem/config.json`。
-- [ ] **B3. 实现**：子命令默认走 **HTTP 客户端**；保留「**本地模式**」开关（仅运维/同机：`--local-db` 指向 `DB_PATH`）作为过渡，文档标明**不推荐用于跨机 Skill**。
+- [x] **B2. 配置**：CLI 已支持 `OMIMEM_BASE_URL`、`OMIMEM_API_TOKEN`（并支持 `--base-url`、`--api-token` 参数）（2026-04-21）。
+- [x] **B3. 实现**：CLI 在配置 base URL 时默认走 HTTP；保留 `--local-db` 本地模式作为兼容过渡（2026-04-21）。
 - [ ] **B4. 发布**：README 安装步骤（`npm i -g` / npx）；与 CI 版本号对齐。
 
 ### 阶段 C：Skill 与文档
 
-- [ ] **C1. 更新 `skills/omimem/SKILL.md`**：以「**先配置 Base URL + Token，再执行 CLI**」为主路径；本地 SQLite 模式降级为开发/同机运维说明。
+- [x] **C1. 更新 `skills/omimem/SKILL.md`**：已改为 Base URL + Token 优先，`--local-db` 作为兼容模式说明（2026-04-21）。
 - [ ] **C2. 发布流程**：保留「项目内改 SKILL → `git push` → 服务器上 **`cp` 到 OpenClaw workspace**」，**不使用软链**（与现有一致）。
-- [ ] **C3. 示例**：给 OpenClaw / 其他平台各一段「最小可运行」示例（仅读 status 或 timeline）。
+- [x] **C3. 示例**：Skill 中已补 API 模式最小命令示例（timeline/conversations/memories/stats）（2026-04-21）。
 
 ### 阶段 D：迁移与清理
 

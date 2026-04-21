@@ -60,34 +60,31 @@ OMI 桌面同步 (omi_memories) ──┘                              ↓
 
 线上 SQLite 数据目录与 `DEPLOY.md` 一致时，多为 **`/www/omi-custom-tts-data/`**，数据库文件 **`/www/omi-custom-tts-data/app.db`**（仍以服务器 `.env` 中 `DATA_ROOT` / `DB_PATH` 为准）。
 
-## OpenClaw / 云端执行 CLI（必读）
+## OpenClaw / 云端执行 CLI（推荐路径）
 
-`npm run omimem` 依赖 **`dotenv`**：默认只从**进程当前工作目录**加载 `.env`。`src/db.ts` / `src/runtime-paths.ts` 在未设置 `DB_PATH` 时会把数据库解析为 **当前目录下的 `app.db`**。
+`omimem` 已支持 **API 模式（推荐）**：只要有服务地址和 token，即可在任意机器查询知识层，无需本机 `app.db`。
 
-因此：
-
-- 在 **`~/.openclaw/workspace`** 下执行 `npm run omimem` 时，若该目录 **不是** 本仓库（没有 `scripts/omimem.ts`），会先报 **`Missing script: "omimem"`**，命令根本不会进入 Node 逻辑。
-- 在任意目录执行且未导出 `DB_PATH` / 未先 `cd` 到部署目录时，会连到 **错误库或空库**，表现为「查不到记忆 / 时间线为空」。
-
-以上通常**不是 SKILL 未更新**，而是 **工作目录或工程根不对**。
-
-**正确做法（二选一）：**
-
-1. **先进入部署目录再执行**（推荐，会加载该目录下 `.env`）：
+先配置：
 
 ```bash
-cd /www/omi-custom-tts && npm run omimem -- timeline
-cd /www/omi-custom-tts && npm run omimem -- stats
+export OMIMEM_BASE_URL="https://your-server.example.com"
+export OMIMEM_API_TOKEN="your_knowledge_api_token"
 ```
 
-2. **任意目录执行时显式指定库与数据根**（与服务器 `.env` 保持一致）：
+然后执行（可在任意 cwd）：
 
 ```bash
-DB_PATH=/www/omi-custom-tts-data/app.db DATA_ROOT=/www/omi-custom-tts-data \
-  bash -lc 'cd /www/omi-custom-tts && npm run omimem -- memories'
+npm run omimem -- timeline
+npm run omimem -- conversations
+npm run omimem -- memories
+npm run omimem -- stats
 ```
 
-只读查数也可走 **HTTP**（无需 CLI cwd）：`GET http://127.0.0.1:28089/api/knowledge/memories/status`（需服务已启动）。
+仅在同机运维/开发时，才建议本地库模式：
+
+```bash
+npm run omimem -- timeline --local-db
+```
 
 ## Quick Reference（CLI）
 
@@ -95,10 +92,10 @@ DB_PATH=/www/omi-custom-tts-data/app.db DATA_ROOT=/www/omi-custom-tts-data \
 |------|------|
 | 事件时间线 | `npm run omimem -- timeline` |
 | 对话列表 / 详情 | `npm run omimem -- conversations` / `npm run omimem -- conversations --id <kc_id>` |
-| 长期记忆 | `npm run omimem -- memories` |
-| 记忆候选 | `npm run omimem -- memories --candidates` |
-| 自然语言问答 | `npm run omimem -- ask "问题"`（需 MiniMax，见「AI」） |
+| 长期记忆 / 候选 | `npm run omimem -- memories` / `npm run omimem -- memories --candidates` |
 | 统计 / 导出 | `npm run omimem -- stats` / `npm run omimem -- export --day YYYY-MM-DD` |
+| 本地库模式（兼容） | 任一命令追加 `--local-db` |
+| 自然语言问答 | `npm run omimem -- ask "问题"`（当前仅本地模式） |
 
 ### OMI memory 基线导入（与线上一致）
 
@@ -122,10 +119,19 @@ npm run rebuild:all-knowledge   # 脚本链；若需保留 OMI 基线请先确�
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
+| GET | `/api/knowledge/timeline` | 时间线（`from`/`to`/`limit`/`type`） |
+| GET | `/api/knowledge/conversations` | 聚合会话列表（`from`/`to`/`limit`） |
+| GET | `/api/knowledge/conversations/:id` | 聚合会话详情（含事件列表） |
+| GET | `/api/knowledge/memories` | 长期记忆列表（`category`/`limit`） |
+| GET | `/api/knowledge/memories/candidates` | 记忆候选列表（`category`/`limit`） |
+| GET | `/api/knowledge/stats` | 事件统计（按 `event_type`） |
+| GET | `/api/knowledge/export` | 按天导出事件（`day=YYYY-MM-DD`） |
 | GET | `/api/knowledge/memories/status` | `omi_memories` / `knowledge_memories` 数量、AI 开关、最近导入与补充摘要 |
 | POST | `/api/knowledge/memories/sync-omi` | 全量将 `omi_memories` 合并进 `knowledge_memories`（body 可含 `sourceKey` 仅同步某源） |
 | POST | `/api/knowledge/memories/config` | `{ "aiSupplementEnabled": true \| false }`，默认 **false** |
 | POST | `/api/knowledge/memories/ai-supplement` | 手动 AI 补充；需开关为 true；body 可含 `apiKey`（不落库） |
+
+认证：`Authorization: Bearer <token>`，token 来源优先 `KNOWLEDGE_API_TOKENS`，未配置时回退 `ACCESS_TOKENS`。
 
 管理界面：`GET /admin` 顶部有「记忆同步与补充」面板（状态、同步按钮、AI 开关、临时 API Key 输入）。
 

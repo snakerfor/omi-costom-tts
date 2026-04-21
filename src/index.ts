@@ -47,6 +47,17 @@ import {
 } from './runtime-paths';
 import { getSpeakerCandidateDetail, listPendingSpeakerCandidates } from './services/speaker-candidate-query-service';
 import { confirmCandidate, saveCandidateDecisions } from './services/speaker-candidate-confirm-service';
+import { isKnowledgeApiAuthorized } from './middleware/knowledge-api-auth';
+import {
+  getKnowledgeConversation,
+  getKnowledgeEventStats,
+  getKnowledgeMemoryCategoryStats,
+  listKnowledgeConversationEvents,
+  listKnowledgeConversations,
+  listKnowledgeMemories,
+  listKnowledgeMemoryCandidates,
+  listKnowledgeTimeline,
+} from './services/knowledge-query-service';
 
 const PORT = parseInt(process.env.PORT ?? '28089', 10);
 
@@ -189,6 +200,11 @@ function enrichConversation(row: any): any {
 }
 
 async function handleApiRequest(req: IncomingMessage, res: ServerResponse, urlObj: URL): Promise<boolean> {
+  if (req.method === 'GET' && urlObj.pathname.startsWith('/api/knowledge/') && !isKnowledgeApiAuthorized(req)) {
+    sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+    return true;
+  }
+
   if (urlObj.pathname.startsWith('/api/omi-sync/')) {
     const token = req.headers['x-omi-sync-token'];
     const tokenValue = Array.isArray(token) ? token[0] : token;
@@ -336,6 +352,106 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, urlOb
 
   if (req.method === 'GET' && urlObj.pathname === '/api/knowledge/memories/status') {
     sendJson(res, 200, { ok: true, data: getKnowledgeMemoryStatus() });
+    return true;
+  }
+
+  if (req.method === 'GET' && urlObj.pathname === '/api/knowledge/timeline') {
+    const from = urlObj.searchParams.get('from') || `${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`;
+    const to = urlObj.searchParams.get('to') || `${new Date().toISOString().slice(0, 10)}T23:59:59.999Z`;
+    const limit = parseNumber(urlObj.searchParams.get('limit'), 100);
+    const type = urlObj.searchParams.get('type') || undefined;
+    const events = listKnowledgeTimeline({ from, to, limit, type });
+    sendJson(res, 200, {
+      ok: true,
+      data: {
+        range: { from, to },
+        count: events.length,
+        events,
+      },
+    });
+    return true;
+  }
+
+  if (req.method === 'GET' && urlObj.pathname === '/api/knowledge/conversations') {
+    const from = urlObj.searchParams.get('from') || `${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`;
+    const to = urlObj.searchParams.get('to') || `${new Date().toISOString().slice(0, 10)}T23:59:59.999Z`;
+    const limit = parseNumber(urlObj.searchParams.get('limit'), 20);
+    const conversations = listKnowledgeConversations({ from, to, limit });
+    sendJson(res, 200, {
+      ok: true,
+      data: {
+        range: { from, to },
+        count: conversations.length,
+        conversations,
+      },
+    });
+    return true;
+  }
+
+  if (req.method === 'GET' && /^\/api\/knowledge\/conversations\/[^/]+$/.test(urlObj.pathname)) {
+    const conversationId = decodeURIComponent(urlObj.pathname.split('/')[4] || '');
+    const conversation = getKnowledgeConversation(conversationId);
+    if (!conversation) {
+      sendJson(res, 404, { ok: false, error: 'Knowledge conversation not found' });
+      return true;
+    }
+    sendJson(res, 200, {
+      ok: true,
+      data: {
+        conversation,
+        events: listKnowledgeConversationEvents(conversationId),
+      },
+    });
+    return true;
+  }
+
+  if (req.method === 'GET' && urlObj.pathname === '/api/knowledge/memories') {
+    const category = urlObj.searchParams.get('category') || undefined;
+    const limit = parseNumber(urlObj.searchParams.get('limit'), 50);
+    const memories = listKnowledgeMemories({ category, limit });
+    sendJson(res, 200, {
+      ok: true,
+      data: {
+        count: memories.length,
+        memories,
+        categoryStats: getKnowledgeMemoryCategoryStats(),
+      },
+    });
+    return true;
+  }
+
+  if (req.method === 'GET' && urlObj.pathname === '/api/knowledge/memories/candidates') {
+    const category = urlObj.searchParams.get('category') || undefined;
+    const limit = parseNumber(urlObj.searchParams.get('limit'), 50);
+    const candidates = listKnowledgeMemoryCandidates({ category, limit });
+    sendJson(res, 200, {
+      ok: true,
+      data: {
+        count: candidates.length,
+        candidates,
+      },
+    });
+    return true;
+  }
+
+  if (req.method === 'GET' && urlObj.pathname === '/api/knowledge/stats') {
+    sendJson(res, 200, { ok: true, data: getKnowledgeEventStats() });
+    return true;
+  }
+
+  if (req.method === 'GET' && urlObj.pathname === '/api/knowledge/export') {
+    const day = urlObj.searchParams.get('day') || new Date().toISOString().slice(0, 10);
+    const from = `${day}T00:00:00.000Z`;
+    const to = `${day}T23:59:59.999Z`;
+    const events = listKnowledgeTimeline({ from, to, limit: 5000 });
+    sendJson(res, 200, {
+      ok: true,
+      data: {
+        day,
+        count: events.length,
+        events,
+      },
+    });
     return true;
   }
 
