@@ -13,6 +13,7 @@ export interface StreamVadGateOptions {
 
 export interface VadChunkDecision {
   sendBuffers: Buffer[];
+  sendChunks: BufferedChunk[];
   isSpeech: boolean;
   resumeBeforeSend: boolean;
   pauseAfterSend: boolean;
@@ -33,6 +34,8 @@ export interface VadStatsSnapshot {
 interface BufferedChunk {
   data: Buffer;
   durationMs: number;
+  originalStartMs: number;
+  originalEndMs: number;
 }
 
 function clampPositiveInt(value: number, fallback: number): number {
@@ -121,15 +124,24 @@ export class StreamVadGate {
 
   processChunk(data: Buffer): VadChunkDecision {
     const durationMs = chunkDurationMs(data, this.sampleRate, this.channels, this.bytesPerSample);
+    const originalStartMs = this.totalAudioMs;
+    const originalEndMs = originalStartMs + durationMs;
+    const bufferedChunk: BufferedChunk = {
+      data,
+      durationMs,
+      originalStartMs,
+      originalEndMs,
+    };
     const metrics = analyzePcmS16Le(data);
     const isSpeech = metrics.rms >= this.rmsThreshold || metrics.peak >= this.peakThreshold;
     const decision: VadChunkDecision = {
       sendBuffers: [],
+      sendChunks: [],
       isSpeech,
       resumeBeforeSend: false,
       pauseAfterSend: false,
     };
-    let activeEquivalentBuffers: Buffer[] = [];
+    let activeEquivalentChunks: BufferedChunk[] = [];
 
     this.totalAudioMs += durationMs;
     if (isSpeech) {
@@ -140,12 +152,13 @@ export class StreamVadGate {
 
     if (this.mode === 'off') {
       decision.sendBuffers = [data];
+      decision.sendChunks = [bufferedChunk];
       this.sentAudioMs += durationMs;
       this.activeEquivalentSentMs += durationMs;
       return decision;
     }
 
-    this.pushPreRoll(data, durationMs);
+    this.pushPreRoll(bufferedChunk);
 
     if (isSpeech) {
       if (!this.inSpeech) {
@@ -155,16 +168,16 @@ export class StreamVadGate {
           decision.resumeBeforeSend = true;
         }
         const flushed = this.flushPreRoll();
-        decision.sendBuffers = flushed;
-        activeEquivalentBuffers = flushed;
+        decision.sendChunks = flushed;
+        activeEquivalentChunks = flushed;
       } else {
-        decision.sendBuffers = [data];
-        activeEquivalentBuffers = [data];
+        decision.sendChunks = [bufferedChunk];
+        activeEquivalentChunks = [bufferedChunk];
       }
       this.hangoverRemainingMs = this.hangoverMs;
     } else if (this.inSpeech) {
-      decision.sendBuffers = [data];
-      activeEquivalentBuffers = [data];
+      decision.sendChunks = [bufferedChunk];
+      activeEquivalentChunks = [bufferedChunk];
       this.hangoverRemainingMs = Math.max(0, this.hangoverRemainingMs - durationMs);
       if (this.hangoverRemainingMs === 0) {
         this.inSpeech = false;
@@ -174,15 +187,13 @@ export class StreamVadGate {
         }
       }
     } else if (this.mode === 'shadow') {
-      decision.sendBuffers = [data];
+      decision.sendChunks = [bufferedChunk];
     }
 
-    const sentMs = decision.sendBuffers.reduce((sum, buffer) => (
-      sum + chunkDurationMs(buffer, this.sampleRate, this.channels, this.bytesPerSample)
-    ), 0);
-    const activeEquivalentMs = activeEquivalentBuffers.reduce((sum, buffer) => (
-      sum + chunkDurationMs(buffer, this.sampleRate, this.channels, this.bytesPerSample)
-    ), 0);
+    decision.sendBuffers = decision.sendChunks.map(chunk => chunk.data);
+
+    const sentMs = decision.sendChunks.reduce((sum, chunk) => sum + chunk.durationMs, 0);
+    const activeEquivalentMs = activeEquivalentChunks.reduce((sum, chunk) => sum + chunk.durationMs, 0);
     this.sentAudioMs += sentMs;
     this.activeEquivalentSentMs += activeEquivalentMs;
 
@@ -210,9 +221,9 @@ export class StreamVadGate {
     };
   }
 
-  private pushPreRoll(data: Buffer, durationMs: number): void {
-    this.preRollBuffers.push({ data, durationMs });
-    this.preRollBufferedMs += durationMs;
+  private pushPreRoll(chunk: BufferedChunk): void {
+    this.preRollBuffers.push(chunk);
+    this.preRollBufferedMs += chunk.durationMs;
 
     while (this.preRollBufferedMs > this.preRollMs && this.preRollBuffers.length > 1) {
       const removed = this.preRollBuffers.shift();
@@ -220,8 +231,8 @@ export class StreamVadGate {
     }
   }
 
-  private flushPreRoll(): Buffer[] {
-    const out = this.preRollBuffers.map(item => item.data);
+  private flushPreRoll(): BufferedChunk[] {
+    const out = [...this.preRollBuffers];
     this.preRollBuffers = [];
     this.preRollBufferedMs = 0;
     return out;

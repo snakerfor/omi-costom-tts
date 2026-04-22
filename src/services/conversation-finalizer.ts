@@ -29,6 +29,13 @@ export interface FinalizeConversationResult {
   segments: FinalizedSegment[];
 }
 
+interface TimelineMapEntry {
+  sent_start_ms: number;
+  sent_end_ms: number;
+  original_start_ms: number;
+  original_end_ms: number;
+}
+
 function hasMeaningfulContent(text: string): boolean {
   return /[\p{Script=Han}\p{L}\p{N}]/u.test(text);
 }
@@ -126,6 +133,68 @@ function normalizeFinalTokens(events: RawTranscriptEvent[]): SonioxToken[] {
   return out;
 }
 
+async function readTimelineMap(rawTranscriptPath: string): Promise<TimelineMapEntry[]> {
+  const sidecarPath = `${rawTranscriptPath}.timeline.json`;
+  try {
+    const raw = await fs.readFile(sidecarPath, 'utf8');
+    const parsed = JSON.parse(raw) as { entries?: TimelineMapEntry[] };
+    const entries = Array.isArray(parsed.entries) ? parsed.entries : [];
+    return entries
+      .filter(entry => (
+        Number.isFinite(entry.sent_start_ms) &&
+        Number.isFinite(entry.sent_end_ms) &&
+        Number.isFinite(entry.original_start_ms) &&
+        Number.isFinite(entry.original_end_ms) &&
+        entry.sent_end_ms > entry.sent_start_ms &&
+        entry.original_end_ms >= entry.original_start_ms
+      ))
+      .sort((a, b) => a.sent_start_ms - b.sent_start_ms);
+  } catch {
+    return [];
+  }
+}
+
+function mapSentMsToOriginalMs(value: number, timeline: TimelineMapEntry[]): number {
+  if (!timeline.length || !Number.isFinite(value)) {
+    return value;
+  }
+
+  for (const entry of timeline) {
+    if (value < entry.sent_start_ms) {
+      continue;
+    }
+    if (value <= entry.sent_end_ms) {
+      const delta = value - entry.sent_start_ms;
+      return Math.min(entry.original_end_ms, entry.original_start_ms + delta);
+    }
+  }
+
+  const last = timeline[timeline.length - 1];
+  if (value > last.sent_end_ms) {
+    return last.original_end_ms + (value - last.sent_end_ms);
+  }
+
+  return value;
+}
+
+function remapTokensToOriginalTimeline(tokens: SonioxToken[], timeline: TimelineMapEntry[]): SonioxToken[] {
+  if (!timeline.length) {
+    return tokens;
+  }
+
+  return tokens.map(token => {
+    const startMs = Number(token.start_ms || 0);
+    const endMs = Number(token.end_ms || startMs);
+    const mappedStart = mapSentMsToOriginalMs(startMs, timeline);
+    const mappedEnd = Math.max(mappedStart, mapSentMsToOriginalMs(endMs, timeline));
+    return {
+      ...token,
+      start_ms: mappedStart,
+      end_ms: mappedEnd,
+    };
+  });
+}
+
 function buildSegments(tokens: SonioxToken[], recordingStartedAt: string): FinalizedSegment[] {
   if (!tokens.length) return [];
 
@@ -217,7 +286,8 @@ export async function finalizeConversation(options: FinalizeConversationOptions)
   }
 
   const events = raw ? parseNdjson(raw) : [];
-  const finalTokens = normalizeFinalTokens(events);
+  const timeline = await readTimelineMap(options.rawTranscriptPath);
+  const finalTokens = remapTokensToOriginalTimeline(normalizeFinalTokens(events), timeline);
   const segments = buildSegments(finalTokens, options.recordingStartedAt);
 
   await fs.mkdir(options.outputDir, { recursive: true });

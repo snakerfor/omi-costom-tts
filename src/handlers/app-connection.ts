@@ -1,6 +1,7 @@
 import WebSocket from 'ws';
 import { IncomingMessage } from 'http';
 import * as path from 'path';
+import * as fs from 'fs/promises';
 import { createHash } from 'crypto';
 import { validateConnection } from '../middleware/auth';
 import { createSonioxSession } from '../services/soniox-session';
@@ -69,6 +70,13 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   let lastAudioPacketAtMs = Date.now();
   let accumulatedSilenceMs = 0;
   let idleWatchdog: NodeJS.Timeout | null = null;
+  let sentTimelineCursorMs = 0;
+  const sentToOriginalTimeline: Array<{
+    sent_start_ms: number;
+    sent_end_ms: number;
+    original_start_ms: number;
+    original_end_ms: number;
+  }> = [];
   const vadGate = new StreamVadGate({
     mode: process.env.STREAM_VAD_MODE,
     sampleRate: 16000,
@@ -148,6 +156,23 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
 
     await recorderReady.catch(() => undefined);
     await ensureWavFinalized('[AudioFile] Saved WAV:');
+    try {
+      await fs.writeFile(
+        `${recorder.filePath}.timeline.json`,
+        JSON.stringify(
+          {
+            session_id: sessionId,
+            generated_at: new Date().toISOString(),
+            entries: sentToOriginalTimeline,
+          },
+          null,
+          2,
+        ),
+        'utf8',
+      );
+    } catch (err) {
+      console.warn('[Recorder] timeline map write failed:', String((err as Error)?.message ?? err));
+    }
 
     try {
       const finalized = await finalizeConversation({
@@ -312,6 +337,31 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     return Math.round((data.length / 2 / 16000) * 1000);
   }
 
+  function appendTimelineMapping(
+    originalStartMs: number,
+    originalEndMs: number,
+    sentStartMs: number,
+    sentEndMs: number,
+  ): void {
+    const prev = sentToOriginalTimeline[sentToOriginalTimeline.length - 1];
+    if (
+      prev &&
+      prev.original_end_ms === originalStartMs &&
+      prev.sent_end_ms === sentStartMs
+    ) {
+      prev.original_end_ms = originalEndMs;
+      prev.sent_end_ms = sentEndMs;
+      return;
+    }
+
+    sentToOriginalTimeline.push({
+      sent_start_ms: sentStartMs,
+      sent_end_ms: sentEndMs,
+      original_start_ms: originalStartMs,
+      original_end_ms: originalEndMs,
+    });
+  }
+
   function finalizeByTimeout(reason: string): void {
     if (finalizeStarted) {
       return;
@@ -370,8 +420,12 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       sonioxPausedByVad = false;
     }
 
-    for (const buffer of decision.sendBuffers) {
-      sendAudioToSoniox(buffer);
+    for (const chunk of decision.sendChunks) {
+      const sentStartMs = sentTimelineCursorMs;
+      const sentEndMs = sentStartMs + chunk.durationMs;
+      appendTimelineMapping(chunk.originalStartMs, chunk.originalEndMs, sentStartMs, sentEndMs);
+      sentTimelineCursorMs = sentEndMs;
+      sendAudioToSoniox(chunk.data);
     }
 
     if (decision.pauseAfterSend && sonioxSession && sonioxConnected && sonioxAcceptingAudio && !sonioxPausedByVad) {
