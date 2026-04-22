@@ -6,6 +6,7 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { clipsDir } from '../runtime-paths';
 import { CandidateDecisionReason, clearPendingCandidatesForConversation, createSpeakerCandidate } from './speaker-candidate-service';
+import { isAIAvailable, chatCompletion, parseJSON } from './minimax-client';
 
 function genId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -538,6 +539,165 @@ interface Block {
   end_ms: number;
 }
 
+async function mergeClustersBySemanticContext(
+  blockAnalyses: BlockAnalysis[],
+  assignments: LocalClusterAssignment[],
+  clusters: LocalCluster[],
+  minSimilarityFallback: number = 0.55
+): Promise<{ assignments: LocalClusterAssignment[]; clusters: LocalCluster[] }> {
+  if (clusters.length <= 1) return { assignments, clusters };
+
+  const scriptLines: string[] = [];
+  const blockToClusterMap = new Map<number, number>();
+  assignments.forEach(a => {
+    if (a.clusterIndex != null) blockToClusterMap.set(a.blockIndex, a.clusterIndex);
+  });
+
+  const orderedBlocks = [...blockAnalyses].sort((a, b) => a.start_ms - b.start_ms);
+  
+  for (const block of orderedBlocks) {
+    const clusterIdx = blockToClusterMap.get(block.index);
+    if (clusterIdx == null) continue;
+    const text = block.segments.map(s => s.text).join(' ');
+    if (text.trim()) {
+      scriptLines.push(`[Speaker L${clusterIdx + 1}] (${block.start_ms}ms): ${text}`);
+    }
+  }
+
+  const scriptText = scriptLines.join('\n');
+
+  const prompt = `Here is a transcription of a conversation. Due to voice fluctuations, the speaker diarization system has overly fragmented the speakers into multiple local clusters (L1, L2, L3, etc.).
+Your task is to analyze the semantic flow, dialogue context, and Q&A relationships to determine which of these "Speaker Lx" labels actually belong to the exact same person.
+
+Transcript:
+${scriptText}
+
+Return a JSON object containing a single array named "same_speaker_groups".
+Each element in the array should be an array of speaker labels (e.g., ["L1", "L3", "L5"]) that belong to the same person.
+Only group them if you are highly confident based on the conversational logic. If a speaker is unique, you can omit them or put them in an array by themselves.
+Output ONLY valid JSON.
+Example format:
+{
+  "same_speaker_groups": [
+    ["L1", "L3"],
+    ["L2", "L4", "L5"]
+  ]
+}`;
+
+  try {
+    const aiResponseText = await chatCompletion(prompt, {
+      temperature: 0.1,
+      systemPrompt: "You are an expert conversational analyst. You fix over-fragmented speaker diarization by grouping speaker labels that are semantically the same person.",
+    });
+
+    const parsed = parseJSON<{ same_speaker_groups: string[][] }>(aiResponseText);
+    const groups = parsed.same_speaker_groups || [];
+
+    const parent = clusters.map((_, index) => index);
+    const find = (index: number): number => {
+      let current = index;
+      while (parent[current] !== current) {
+        parent[current] = parent[parent[current]];
+        current = parent[current];
+      }
+      return current;
+    };
+    const union = (a: number, b: number): void => {
+      const rootA = find(a);
+      const rootB = find(b);
+      if (rootA !== rootB) parent[rootB] = rootA;
+    };
+
+    let mergedCount = 0;
+    for (const group of groups) {
+      const indices = group
+        .map(g => parseInt(g.replace('L', ''), 10) - 1)
+        .filter(idx => !isNaN(idx) && idx >= 0 && idx < clusters.length);
+
+      for (let i = 0; i < indices.length; i++) {
+        for (let j = i + 1; j < indices.length; j++) {
+          const idxA = indices[i];
+          const idxB = indices[j];
+          
+          const clusterA = clusters[idxA];
+          const clusterB = clusters[idxB];
+          if (clusterA.centroid.length > 0 && clusterB.centroid.length > 0) {
+             const sim = cosineSimilarity(clusterA.centroid, clusterB.centroid);
+             if (sim < minSimilarityFallback) {
+                console.warn(`[Semantic Merge] Refusing to merge L${idxA+1} and L${idxB+1} due to low similarity: ${sim}`);
+                continue;
+             }
+          }
+          union(idxA, idxB);
+          mergedCount++;
+        }
+      }
+    }
+
+    if (mergedCount === 0) {
+      return { assignments, clusters };
+    }
+
+    const mergedByRoot = new Map<number, LocalCluster>();
+    for (let index = 0; index < clusters.length; index++) {
+      const root = find(index);
+      const source = clusters[index];
+      const existing = mergedByRoot.get(root);
+      if (!existing) {
+        mergedByRoot.set(root, {
+          blockIndexes: [...source.blockIndexes],
+          centroid: source.centroid,
+          labelCounts: new Map(source.labelCounts),
+          firstStartMs: source.firstStartMs,
+          lastEndMs: source.lastEndMs,
+        });
+        continue;
+      }
+
+      existing.blockIndexes.push(...source.blockIndexes);
+      existing.firstStartMs = Math.min(existing.firstStartMs, source.firstStartMs);
+      existing.lastEndMs = Math.max(existing.lastEndMs, source.lastEndMs);
+      for (const [label, count] of source.labelCounts.entries()) {
+        existing.labelCounts.set(label, (existing.labelCounts.get(label) || 0) + count);
+      }
+    }
+
+    const mergedClusters = [...mergedByRoot.values()]
+      .map(cluster => {
+        const embeddings = cluster.blockIndexes
+          .map(blockIndex => blockAnalyses.find(block => block.index === blockIndex)?.embedding || null)
+          .filter((embedding): embedding is number[] => Array.isArray(embedding) && embedding.length > 0);
+        return {
+          ...cluster,
+          blockIndexes: [...new Set(cluster.blockIndexes)].sort((a, b) => a - b),
+          centroid: embeddings.length > 0 ? averageEmbeddings(embeddings) : [],
+        };
+      })
+      .sort((a, b) => a.firstStartMs - b.firstStartMs);
+
+    const blockToMergedCluster = new Map<number, number>();
+    mergedClusters.forEach((cluster, mergedIndex) => {
+      for (const blockIndex of cluster.blockIndexes) {
+        blockToMergedCluster.set(blockIndex, mergedIndex);
+      }
+    });
+
+    const remappedAssignments = assignments.map(item => ({
+      ...item,
+      clusterIndex: item.clusterIndex == null ? null : (blockToMergedCluster.get(item.blockIndex) ?? null),
+    }));
+
+    return {
+      assignments: remappedAssignments,
+      clusters: mergedClusters,
+    };
+
+  } catch (error) {
+    console.error(`[Semantic Merge] Failed to use LLM for semantic merge:`, error);
+    return { assignments, clusters };
+  }
+}
+
 export async function mapSpeakersForConversation(conversationId: string): Promise<void> {
   const conversationMeta = db.prepare(`
     SELECT session_id
@@ -578,10 +738,10 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
   const threshold = Number(process.env.SPEAKER_MATCH_THRESHOLD || 0.78);
   const margin = Number(process.env.SPEAKER_MATCH_MARGIN || 0.06);
   const minEnrollmentMs = Number(process.env.SPEAKER_MIN_ENROLLMENT_MS || 2500);
-  const localThreshold = Number(process.env.LOCAL_SPEAKER_CLUSTER_THRESHOLD || 0.72);
+  const localThreshold = Number(process.env.LOCAL_SPEAKER_CLUSTER_THRESHOLD || 0.68);
   const localMargin = Number(process.env.LOCAL_SPEAKER_CLUSTER_MARGIN || 0.04);
   const localGapMs = Number(process.env.LOCAL_SPEAKER_CLUSTER_GAP_MS || 12000);
-  const localMergeThreshold = Number(process.env.LOCAL_SPEAKER_CLUSTER_MERGE_THRESHOLD || 0.88);
+  const localMergeThreshold = Number(process.env.LOCAL_SPEAKER_CLUSTER_MERGE_THRESHOLD || 0.80);
 
   interface MatchInfo {
     speaker_id: string;
@@ -646,12 +806,22 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
     localMargin,
     localGapMs,
   );
-  const { assignments, clusters } = mergeLocalClustersSecondPass(
+  let { assignments, clusters } = mergeLocalClustersSecondPass(
     localInputs,
     initialClustering.assignments,
     initialClustering.clusters,
     localMergeThreshold,
   );
+
+  if (isAIAvailable() && clusters.length > 1) {
+    const semanticResult = await mergeClustersBySemanticContext(
+      blockAnalyses,
+      assignments,
+      clusters,
+    );
+    assignments = semanticResult.assignments;
+    clusters = semanticResult.clusters;
+  }
 
   const clusterMatchByIndex = new Map<number, { matchInfo: MatchInfo | null; resolutionMethod: string }>();
   for (let clusterIndex = 0; clusterIndex < clusters.length; clusterIndex++) {
