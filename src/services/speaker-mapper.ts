@@ -268,6 +268,118 @@ function buildLocalSpeakerClustersDetailed(
   };
 }
 
+function dominantClusterLabel(cluster: LocalCluster): string | null {
+  let bestLabel: string | null = null;
+  let bestCount = -1;
+  for (const [label, count] of cluster.labelCounts.entries()) {
+    if (count > bestCount) {
+      bestLabel = label;
+      bestCount = count;
+    }
+  }
+  return bestLabel;
+}
+
+function mergeLocalClustersSecondPass(
+  items: LocalClusterInput[],
+  assignments: LocalClusterAssignment[],
+  clusters: LocalCluster[],
+  threshold: number,
+): { assignments: LocalClusterAssignment[]; clusters: LocalCluster[] } {
+  if (clusters.length <= 1) {
+    return { assignments, clusters };
+  }
+
+  const parent = clusters.map((_, index) => index);
+  const find = (index: number): number => {
+    let current = index;
+    while (parent[current] !== current) {
+      parent[current] = parent[parent[current]];
+      current = parent[current];
+    }
+    return current;
+  };
+  const union = (a: number, b: number): void => {
+    const rootA = find(a);
+    const rootB = find(b);
+    if (rootA !== rootB) {
+      parent[rootB] = rootA;
+    }
+  };
+
+  for (let i = 0; i < clusters.length; i++) {
+    const left = clusters[i];
+    const leftLabel = dominantClusterLabel(left);
+    if (!left.centroid.length || !leftLabel) continue;
+
+    for (let j = i + 1; j < clusters.length; j++) {
+      const right = clusters[j];
+      const rightLabel = dominantClusterLabel(right);
+      if (!right.centroid.length || !rightLabel) continue;
+      if (leftLabel !== rightLabel) continue;
+
+      const similarity = cosineSimilarity(left.centroid, right.centroid);
+      if (similarity >= threshold) {
+        union(i, j);
+      }
+    }
+  }
+
+  const mergedByRoot = new Map<number, LocalCluster>();
+  for (let index = 0; index < clusters.length; index++) {
+    const root = find(index);
+    const source = clusters[index];
+    const existing = mergedByRoot.get(root);
+    if (!existing) {
+      mergedByRoot.set(root, {
+        blockIndexes: [...source.blockIndexes],
+        centroid: source.centroid,
+        labelCounts: new Map(source.labelCounts),
+        firstStartMs: source.firstStartMs,
+        lastEndMs: source.lastEndMs,
+      });
+      continue;
+    }
+
+    existing.blockIndexes.push(...source.blockIndexes);
+    existing.firstStartMs = Math.min(existing.firstStartMs, source.firstStartMs);
+    existing.lastEndMs = Math.max(existing.lastEndMs, source.lastEndMs);
+    for (const [label, count] of source.labelCounts.entries()) {
+      existing.labelCounts.set(label, (existing.labelCounts.get(label) || 0) + count);
+    }
+  }
+
+  const mergedClusters = [...mergedByRoot.values()]
+    .map(cluster => {
+      const embeddings = cluster.blockIndexes
+        .map(blockIndex => items.find(item => item.blockIndex === blockIndex)?.embedding || null)
+        .filter((embedding): embedding is number[] => Array.isArray(embedding) && embedding.length > 0);
+      return {
+        ...cluster,
+        blockIndexes: [...new Set(cluster.blockIndexes)].sort((a, b) => a - b),
+        centroid: averageEmbeddings(embeddings),
+      };
+    })
+    .sort((a, b) => a.firstStartMs - b.firstStartMs);
+
+  const blockToMergedCluster = new Map<number, number>();
+  mergedClusters.forEach((cluster, mergedIndex) => {
+    for (const blockIndex of cluster.blockIndexes) {
+      blockToMergedCluster.set(blockIndex, mergedIndex);
+    }
+  });
+
+  const remappedAssignments = assignments.map(item => ({
+    ...item,
+    clusterIndex: item.clusterIndex == null ? null : (blockToMergedCluster.get(item.blockIndex) ?? null),
+  }));
+
+  return {
+    assignments: remappedAssignments,
+    clusters: mergedClusters,
+  };
+}
+
 export function assignLocalSpeakerClusters(
   items: LocalClusterInput[],
   threshold: number,
@@ -469,6 +581,7 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
   const localThreshold = Number(process.env.LOCAL_SPEAKER_CLUSTER_THRESHOLD || 0.72);
   const localMargin = Number(process.env.LOCAL_SPEAKER_CLUSTER_MARGIN || 0.04);
   const localGapMs = Number(process.env.LOCAL_SPEAKER_CLUSTER_GAP_MS || 12000);
+  const localMergeThreshold = Number(process.env.LOCAL_SPEAKER_CLUSTER_MERGE_THRESHOLD || 0.88);
 
   interface MatchInfo {
     speaker_id: string;
@@ -527,11 +640,17 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
     endMs: block.end_ms,
     embedding: block.embedding,
   }));
-  const { assignments, clusters } = buildLocalSpeakerClustersDetailed(
+  const initialClustering = buildLocalSpeakerClustersDetailed(
     localInputs,
     localThreshold,
     localMargin,
     localGapMs,
+  );
+  const { assignments, clusters } = mergeLocalClustersSecondPass(
+    localInputs,
+    initialClustering.assignments,
+    initialClustering.clusters,
+    localMergeThreshold,
   );
 
   const clusterMatchByIndex = new Map<number, { matchInfo: MatchInfo | null; resolutionMethod: string }>();
