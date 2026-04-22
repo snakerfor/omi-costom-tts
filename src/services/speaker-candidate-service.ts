@@ -10,6 +10,8 @@ export interface CreateSpeakerCandidateInput {
   conversationId: string;
   sessionId: string | null;
   speakerLabel: string | null;
+  localSpeakerKey: string | null;
+  rawLabelSummary: string | null;
   rawEmbedding: number[] | null;
   bestMatchSpeakerId: string | null;
   bestScore: number | null;
@@ -18,6 +20,7 @@ export interface CreateSpeakerCandidateInput {
   decisionReason: CandidateDecisionReason;
   sampleClipPath: string | null;
   sampleText: string | null;
+  segmentIds: string[];
   clips: Array<{
     segmentId: string | null;
     clipPath: string;
@@ -34,11 +37,17 @@ export function createSpeakerCandidate(input: CreateSpeakerCandidateInput): stri
 
   const insertCandidate = db.prepare(`
     INSERT INTO speaker_candidates (
-      id, conversation_id, session_id, speaker_label, status, raw_embedding_json,
+      id, conversation_id, session_id, speaker_label, local_speaker_key, raw_label_summary, status, raw_embedding_json,
       best_match_speaker_id, best_score, second_match_speaker_id, second_score,
       decision_reason, sample_clip_path, sample_text, confirmed_speaker_id,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const insertSegment = db.prepare(`
+    INSERT INTO speaker_candidate_segments (
+      candidate_id, segment_id, created_at
+    ) VALUES (?, ?, ?)
   `);
 
   const insertClip = db.prepare(`
@@ -54,6 +63,8 @@ export function createSpeakerCandidate(input: CreateSpeakerCandidateInput): stri
       input.conversationId,
       input.sessionId,
       input.speakerLabel,
+      input.localSpeakerKey,
+      input.rawLabelSummary,
       'pending',
       input.rawEmbedding?.length ? JSON.stringify(input.rawEmbedding) : null,
       input.bestMatchSpeakerId,
@@ -67,6 +78,14 @@ export function createSpeakerCandidate(input: CreateSpeakerCandidateInput): stri
       now,
       now,
     );
+
+    for (const segmentId of [...new Set(input.segmentIds)].filter(Boolean)) {
+      insertSegment.run(
+        candidateId,
+        segmentId,
+        now,
+      );
+    }
 
     for (const clip of input.clips) {
       insertClip.run(
@@ -101,6 +120,10 @@ export function clearPendingCandidatesForConversation(conversationId: string): n
     DELETE FROM speaker_candidate_clips
     WHERE candidate_id = ?
   `);
+  const deleteSegments = db.prepare(`
+    DELETE FROM speaker_candidate_segments
+    WHERE candidate_id = ?
+  `);
   const deleteCandidate = db.prepare(`
     DELETE FROM speaker_candidates
     WHERE id = ?
@@ -110,6 +133,7 @@ export function clearPendingCandidatesForConversation(conversationId: string): n
     const rows = selectIds.all(conversationId) as Array<{ id: string }>;
     for (const row of rows) {
       deleteClips.run(row.id);
+      deleteSegments.run(row.id);
       deleteCandidate.run(row.id);
     }
     return rows.length;

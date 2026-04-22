@@ -498,14 +498,16 @@
     listEl.innerHTML = state.candidates.map((item) => `
       <article class="list-item ${item.id === state.selectedCandidateId ? 'active' : ''}" data-seed-batch-id="${escapeHtml(item.id)}">
         <div class="list-item-title">
-          <span>${escapeHtml(item.conversation_id)} / ${escapeHtml(item.speaker_label || '-')}</span>
+          <span>${escapeHtml(item.conversation_id)} / ${escapeHtml(item.local_speaker_key || item.speaker_label || '-')}</span>
           <span class="subtle">${escapeHtml(formatDate(item.created_at))}</span>
         </div>
         <div class="badge-row">
+          <span class="badge">${escapeHtml(item.local_speaker_key || 'local-?')}</span>
           <span class="badge">${escapeHtml(candidateReasonLabel(item.decision_reason))}</span>
           <span class="badge">clips ${item.clip_count}</span>
           <span class="badge">best ${item.best_score == null ? '-' : item.best_score.toFixed(3)}</span>
         </div>
+        <p class="subtle">${escapeHtml(item.raw_label_summary || 'raw labels unavailable')}</p>
         <p class="subtle">${escapeHtml(item.best_match_name || item.best_match_speaker_id || '无推荐命中')}</p>
         <p>${escapeHtml((item.sample_text || '').slice(0, 72) || '暂无样本文本')}</p>
       </article>
@@ -530,10 +532,10 @@
     state.candidateDetail = detail;
     qs('#seed-empty').classList.add('hidden');
     qs('#seed-detail').classList.remove('hidden');
-    qs('#seed-title').textContent = detail.candidate.best_match_name || detail.candidate.sample_text || detail.candidate.id;
+    qs('#seed-title').textContent = detail.candidate.local_speaker_key || detail.candidate.best_match_name || detail.candidate.sample_text || detail.candidate.id;
     qs('#seed-batch-id').textContent = detail.candidate.id;
     qs('#seed-session-id').textContent = detail.candidate.session_id || '-';
-    qs('#seed-speaker-count').textContent = String(detail.candidate.speaker_label || '-');
+    qs('#seed-speaker-count').textContent = `${detail.candidate.local_speaker_key || '-'} / raw ${detail.candidate.raw_label_summary || detail.candidate.speaker_label || '-'}`;
     qs('#seed-candidate-count').textContent = String(detail.clips.length);
     const orderedClips = [...detail.clips].sort((a, b) => {
       const startDiff = (a.start_ms || 0) - (b.start_ms || 0);

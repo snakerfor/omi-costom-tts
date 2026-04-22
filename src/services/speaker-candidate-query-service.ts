@@ -5,6 +5,8 @@ export interface SpeakerCandidateListRow {
   conversation_id: string;
   session_id: string | null;
   speaker_label: string | null;
+  local_speaker_key: string | null;
+  raw_label_summary: string | null;
   status: string;
   best_match_speaker_id: string | null;
   best_match_name: string | null;
@@ -49,6 +51,8 @@ export function listPendingSpeakerCandidates(): SpeakerCandidateListRow[] {
       sc.conversation_id,
       sc.session_id,
       sc.speaker_label,
+      sc.local_speaker_key,
+      sc.raw_label_summary,
       sc.status,
       sc.best_match_speaker_id,
       s1.name AS best_match_name,
@@ -70,6 +74,7 @@ export function listPendingSpeakerCandidates(): SpeakerCandidateListRow[] {
     WHERE sc.status = 'pending'
     GROUP BY
       sc.id, sc.conversation_id, sc.session_id, sc.speaker_label, sc.status,
+      sc.local_speaker_key, sc.raw_label_summary,
       sc.best_match_speaker_id, s1.name, sc.best_score,
       sc.second_match_speaker_id, s2.name, sc.second_score,
       sc.decision_reason, sc.sample_clip_path, sc.sample_text,
@@ -85,6 +90,8 @@ export function getSpeakerCandidateDetail(candidateId: string): SpeakerCandidate
       sc.conversation_id,
       sc.session_id,
       sc.speaker_label,
+      sc.local_speaker_key,
+      sc.raw_label_summary,
       sc.status,
       sc.best_match_speaker_id,
       s1.name AS best_match_name,

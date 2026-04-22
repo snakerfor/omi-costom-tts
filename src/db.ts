@@ -128,6 +128,8 @@ export function initDb(): void {
       conversation_id TEXT NOT NULL,
       session_id TEXT,
       speaker_label TEXT,
+      local_speaker_key TEXT,
+      raw_label_summary TEXT,
       status TEXT NOT NULL,
       raw_embedding_json TEXT,
       best_match_speaker_id TEXT,
@@ -140,6 +142,13 @@ export function initDb(): void {
       confirmed_speaker_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS speaker_candidate_segments (
+      candidate_id TEXT NOT NULL,
+      segment_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (candidate_id, segment_id)
     );
 
     CREATE TABLE IF NOT EXISTS speaker_candidate_clips (
@@ -366,6 +375,8 @@ export function initDb(): void {
   addColumnIfMissing('speakers', 'last_seen_at', 'TEXT');
   addColumnIfMissing('conversation_segments', 'speaker_identity', 'TEXT');
   addColumnIfMissing('conversation_segments', 'original_speaker_label', 'TEXT');
+  addColumnIfMissing('speaker_candidates', 'local_speaker_key', 'TEXT');
+  addColumnIfMissing('speaker_candidates', 'raw_label_summary', 'TEXT');
   addColumnIfMissing('conversations', 'vad_mode', 'TEXT');
   addColumnIfMissing('conversations', 'vad_total_audio_ms', 'INTEGER');
   addColumnIfMissing('conversations', 'vad_detected_speech_ms', 'INTEGER');
@@ -387,6 +398,9 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_speaker_candidates_status ON speaker_candidates(status);
     CREATE INDEX IF NOT EXISTS idx_speaker_candidates_conversation_id ON speaker_candidates(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_speaker_candidates_confirmed_speaker_id ON speaker_candidates(confirmed_speaker_id);
+    CREATE INDEX IF NOT EXISTS idx_speaker_candidates_local_speaker_key ON speaker_candidates(local_speaker_key);
+    CREATE INDEX IF NOT EXISTS idx_speaker_candidate_segments_candidate_id ON speaker_candidate_segments(candidate_id);
+    CREATE INDEX IF NOT EXISTS idx_speaker_candidate_segments_segment_id ON speaker_candidate_segments(segment_id);
     CREATE INDEX IF NOT EXISTS idx_speaker_candidate_clips_candidate_id ON speaker_candidate_clips(candidate_id);
     CREATE INDEX IF NOT EXISTS idx_speaker_candidate_clips_segment_id ON speaker_candidate_clips(segment_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_omi_video_chunks_unique ON omi_video_chunks(source_key, video_chunk_path);

@@ -15,8 +15,6 @@ interface ClipDecisionInput {
 
 interface PendingCandidateRow {
   id: string;
-  conversation_id: string;
-  speaker_label: string | null;
   raw_embedding_json: string | null;
 }
 
@@ -32,8 +30,8 @@ interface CandidateClipRow {
 
 interface CandidateRow {
   id: string;
-  conversation_id: string;
   speaker_label: string | null;
+  local_speaker_key: string | null;
   session_id: string | null;
   sample_text: string | null;
   sample_clip_path: string | null;
@@ -174,7 +172,7 @@ export async function confirmCandidate(candidateId: string): Promise<{
   updatedSegmentCount: number;
 }> {
   const candidate = db.prepare(`
-    SELECT id, conversation_id, speaker_label, session_id, sample_text, sample_clip_path
+    SELECT id, speaker_label, local_speaker_key, session_id, sample_text, sample_clip_path
     FROM speaker_candidates
     WHERE id = ? AND status = 'pending'
   `).get(candidateId) as CandidateRow | undefined;
@@ -239,7 +237,11 @@ export async function confirmCandidate(candidateId: string): Promise<{
   const updateSegmentsForCandidate = db.prepare(`
     UPDATE conversation_segments
     SET speaker_id = ?, speaker_name = ?, confidence = ?, resolution_method = ?, updated_at = ?
-    WHERE conversation_id = ? AND speaker_label = ?
+    WHERE id IN (
+      SELECT segment_id
+      FROM speaker_candidate_segments
+      WHERE candidate_id = ?
+    )
   `);
 
   const updateCandidate = db.prepare(`
@@ -249,7 +251,7 @@ export async function confirmCandidate(candidateId: string): Promise<{
   `);
 
   const pendingCandidates = db.prepare(`
-    SELECT id, conversation_id, speaker_label, raw_embedding_json
+    SELECT id, raw_embedding_json
     FROM speaker_candidates
     WHERE status = 'pending' AND id != ?
   `).all(candidateId) as PendingCandidateRow[];
@@ -272,8 +274,7 @@ export async function confirmCandidate(candidateId: string): Promise<{
       1,
       'candidate_manual_confirm',
       now,
-      candidate.conversation_id,
-      candidate.speaker_label,
+      candidateId,
     ) as { changes?: number };
     updatedSegmentCount += result.changes || 0;
 
@@ -295,8 +296,7 @@ export async function confirmCandidate(candidateId: string): Promise<{
         similarity,
         'candidate_auto_merged',
         now,
-        row.conversation_id,
-        row.speaker_label,
+        row.id,
       ) as { changes?: number };
       updatedSegmentCount += mergeResult.changes || 0;
       mergedCandidateIds.push(row.id);

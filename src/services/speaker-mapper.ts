@@ -86,26 +86,6 @@ interface BlockAnalysis extends Block {
   embeddingResult: EmbeddingBuildResult | null;
 }
 
-interface PendingCandidateAggregate {
-  speakerLabel: string;
-  embeddings: number[][];
-  clips: Array<{
-    segmentId: string | null;
-    clipPath: string;
-    text: string | null;
-    startMs: number | null;
-    endMs: number | null;
-    durationMs: number | null;
-  }>;
-  bestMatchSpeakerId: string | null;
-  bestScore: number | null;
-  secondMatchSpeakerId: string | null;
-  secondScore: number | null;
-  decisionReason: CandidateDecisionReason;
-  sampleClipPath: string | null;
-  sampleText: string | null;
-}
-
 function pickCandidateSegments(rows: SegmentRow[], maxCount: number = 3): CandidateSegment[] {
   return rows
     .map(row => {
@@ -555,7 +535,6 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
   );
 
   const clusterMatchByIndex = new Map<number, { matchInfo: MatchInfo | null; resolutionMethod: string }>();
-  const pendingCandidateByLabel = new Map<string, PendingCandidateAggregate>();
   for (let clusterIndex = 0; clusterIndex < clusters.length; clusterIndex++) {
     const cluster = clusters[clusterIndex];
     const clusterBlocks = cluster.blockIndexes
@@ -604,55 +583,9 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
         durationMs: item.candidate.duration,
       })),
     );
-    const aggregateKey = representative.speaker_label || 'unknown';
-    const existingAggregate = pendingCandidateByLabel.get(aggregateKey);
-    if (existingAggregate) {
-      existingAggregate.embeddings.push(centroid);
-      existingAggregate.clips.push(...clipRows);
-      if ((matchEvaluation.best?.similarity ?? -1) > (existingAggregate.bestScore ?? -1)) {
-        existingAggregate.bestMatchSpeakerId = matchEvaluation.best?.speaker_id || null;
-        existingAggregate.bestScore = matchEvaluation.best?.similarity ?? null;
-        existingAggregate.secondMatchSpeakerId = matchEvaluation.second?.speaker_id || null;
-        existingAggregate.secondScore = matchEvaluation.second?.similarity ?? null;
-      }
-      if (
-        existingAggregate.decisionReason !== 'conflict' &&
-        decisionReason === 'conflict'
-      ) {
-        existingAggregate.decisionReason = 'conflict';
-      }
-      if (
-        !existingAggregate.sampleClipPath &&
-        repClipPath
-      ) {
-        existingAggregate.sampleClipPath = repClipPath;
-        existingAggregate.sampleText = rep.text || null;
-      }
-    } else {
-      pendingCandidateByLabel.set(aggregateKey, {
-        speakerLabel: representative.speaker_label,
-        embeddings: [centroid],
-        clips: clipRows,
-        bestMatchSpeakerId: matchEvaluation.best?.speaker_id || null,
-        bestScore: matchEvaluation.best?.similarity ?? null,
-        secondMatchSpeakerId: matchEvaluation.second?.speaker_id || null,
-        secondScore: matchEvaluation.second?.similarity ?? null,
-        decisionReason,
-        sampleClipPath: repClipPath,
-        sampleText: rep.text || null,
-      });
-    }
-
-    clusterMatchByIndex.set(clusterIndex, {
-      matchInfo: null,
-      resolutionMethod: 'candidate_pending',
-    });
-  }
-
-  for (const aggregate of pendingCandidateByLabel.values()) {
-    const dedupedClips = Array.from(
+    const dedupedClipRows = Array.from(
       new Map(
-        aggregate.clips.map(clip => [
+        clipRows.map(clip => [
           clip.segmentId || `${clip.startMs || 0}-${clip.endMs || 0}-${clip.clipPath}`,
           clip,
         ]),
@@ -660,20 +593,33 @@ export async function mapSpeakersForConversation(conversationId: string): Promis
     )
       .sort((a, b) => (b.durationMs || 0) - (a.durationMs || 0))
       .slice(0, 5);
+    const segmentIds = clusterBlocks.flatMap(block => block.segments.map(segment => segment.id));
+    const rawLabelSummary = [...cluster.labelCounts.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([label, count]) => `${label}:${count}`)
+      .join(', ');
 
     createSpeakerCandidate({
       conversationId,
       sessionId: conversationMeta?.session_id || null,
-      speakerLabel: aggregate.speakerLabel,
-      rawEmbedding: averageEmbeddings(aggregate.embeddings),
-      bestMatchSpeakerId: aggregate.bestMatchSpeakerId,
-      bestScore: aggregate.bestScore,
-      secondMatchSpeakerId: aggregate.secondMatchSpeakerId,
-      secondScore: aggregate.secondScore,
-      decisionReason: aggregate.decisionReason,
-      sampleClipPath: aggregate.sampleClipPath || dedupedClips[0]?.clipPath || null,
-      sampleText: aggregate.sampleText || dedupedClips[0]?.text || null,
-      clips: dedupedClips,
+      speakerLabel: representative.speaker_label,
+      localSpeakerKey: `L${clusterIndex + 1}`,
+      rawLabelSummary: rawLabelSummary || null,
+      rawEmbedding: centroid,
+      bestMatchSpeakerId: matchEvaluation.best?.speaker_id || null,
+      bestScore: matchEvaluation.best?.similarity ?? null,
+      secondMatchSpeakerId: matchEvaluation.second?.speaker_id || null,
+      secondScore: matchEvaluation.second?.similarity ?? null,
+      decisionReason,
+      sampleClipPath: repClipPath,
+      sampleText: rep.text || null,
+      segmentIds,
+      clips: dedupedClipRows,
+    });
+
+    clusterMatchByIndex.set(clusterIndex, {
+      matchInfo: null,
+      resolutionMethod: 'candidate_pending',
     });
   }
 
