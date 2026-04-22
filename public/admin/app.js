@@ -26,6 +26,13 @@
     return date.toLocaleString('zh-CN', { hour12: false });
   }
 
+  function formatSeconds(value) {
+    const totalSeconds = Math.max(0, Math.round(Number(value || 0) / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  }
+
   function escapeHtml(value) {
     return String(value || '')
       .replace(/&/g, '&amp;')
@@ -528,15 +535,24 @@
     qs('#seed-session-id').textContent = detail.candidate.session_id || '-';
     qs('#seed-speaker-count').textContent = String(detail.candidate.speaker_label || '-');
     qs('#seed-candidate-count').textContent = String(detail.clips.length);
+    const orderedClips = [...detail.clips].sort((a, b) => {
+      const startDiff = (a.start_ms || 0) - (b.start_ms || 0);
+      if (startDiff !== 0) return startDiff;
+      return (a.end_ms || 0) - (b.end_ms || 0);
+    });
 
-    qs('#seed-candidate-list').innerHTML = detail.clips.length
-      ? detail.clips.map((item, index) => `
+    qs('#seed-candidate-list').innerHTML = orderedClips.length
+      ? orderedClips.map((item, index) => `
         <article class="segment-item seed-item" data-seed-segment-id="${escapeHtml(item.id)}">
           <div class="segment-title">
-            <span>${index + 1}. ${escapeHtml(detail.candidate.speaker_label || 'unknown')}</span>
+            <span>切片 ${index + 1}</span>
             <span class="subtle">${Math.round((item.duration_ms || 0) / 1000)}s</span>
           </div>
-          <p class="subtle">${escapeHtml(item.segment_id || '-')}</p>
+          <div class="badge-row">
+            <span class="badge">会话内发言人 ${escapeHtml(detail.candidate.speaker_label || 'unknown')}</span>
+            <span class="badge">${escapeHtml(formatSeconds(item.start_ms))} - ${escapeHtml(formatSeconds(item.end_ms))}</span>
+          </div>
+          <p class="subtle">Segment ID: ${escapeHtml(item.segment_id || '-')}</p>
           <p>${escapeHtml(item.text || '')}</p>
           <audio controls preload="none" src="${escapeHtml(item.clip_url || '')}"></audio>
           <div class="seed-actions">
