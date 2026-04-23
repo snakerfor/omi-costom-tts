@@ -47,6 +47,12 @@ import {
 } from './runtime-paths';
 import { getSpeakerCandidateDetail, listPendingSpeakerCandidates } from './services/speaker-candidate-query-service';
 import { confirmCandidate, saveCandidateDecisions } from './services/speaker-candidate-confirm-service';
+import {
+  backfillConversationVoiceprintSegments,
+  enrollFromSegments,
+  getPendingSegments,
+  scanConversationVoiceprintSegments,
+} from './services/voiceprint/segment-voiceprint-service';
 
 const PORT = parseInt(process.env.PORT ?? '28089', 10);
 
@@ -337,6 +343,94 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, urlOb
     const candidateId = decodeURIComponent(urlObj.pathname.split('/')[3] || '');
     const result = await confirmCandidate(candidateId);
     sendJson(res, 200, { ok: true, data: result });
+    return true;
+  }
+
+  if (req.method === 'GET' && /^\/api\/admin\/conversations\/[^/]+\/voiceprint\/pending-segments$/.test(urlObj.pathname)) {
+    const conversationId = decodeURIComponent(urlObj.pathname.split('/')[4] || '');
+    try {
+      const result = getPendingSegments(conversationId);
+      sendJson(res, 200, {
+        ok: true,
+        data: {
+          conversationId: result.conversationId,
+          stats: result.stats,
+          segments: result.segments.map(segment => ({
+            ...segment,
+            audioUrl: toMediaUrl(segment.audioUrl),
+          })),
+        },
+      });
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: String((err as Error)?.message ?? err) });
+    }
+    return true;
+  }
+
+  if (req.method === 'POST' && /^\/api\/admin\/conversations\/[^/]+\/voiceprint\/xfyun\/scan$/.test(urlObj.pathname)) {
+    const conversationId = decodeURIComponent(urlObj.pathname.split('/')[4] || '');
+    const body = await readJsonBody<{ onlyUnresolved?: boolean; limit?: number; dryRun?: boolean }>(req);
+    try {
+      const result = await scanConversationVoiceprintSegments(conversationId, {
+        onlyUnresolved: body.onlyUnresolved !== false,
+        limit: body.limit,
+        dryRun: !!body.dryRun,
+      });
+      sendJson(res, 200, { ok: true, data: result });
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: String((err as Error)?.message ?? err) });
+    }
+    return true;
+  }
+
+  if (req.method === 'POST' && /^\/api\/admin\/conversations\/[^/]+\/voiceprint\/xfyun\/backfill$/.test(urlObj.pathname)) {
+    const conversationId = decodeURIComponent(urlObj.pathname.split('/')[4] || '');
+    const body = await readJsonBody<{ onlyUnresolved?: boolean; limit?: number; dryRun?: boolean }>(req);
+    try {
+      const result = await backfillConversationVoiceprintSegments(conversationId, {
+        onlyUnresolved: body.onlyUnresolved !== false,
+        limit: body.limit,
+        dryRun: !!body.dryRun,
+      });
+      sendJson(res, 200, { ok: true, data: result });
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: String((err as Error)?.message ?? err) });
+    }
+    return true;
+  }
+
+  if (req.method === 'POST' && urlObj.pathname === '/api/admin/voiceprint/xfyun/enroll-from-segments') {
+    const body = await readJsonBody<{
+      conversationId?: string;
+      segmentIds?: string[];
+      speakerMode?: 'new' | 'existing';
+      speakerId?: string | null;
+      speakerName?: string | null;
+      identityLabel?: string | null;
+      excludedSegmentIds?: string[];
+    }>(req);
+    try {
+      if (!body.conversationId) {
+        sendJson(res, 400, { ok: false, error: 'conversationId is required' });
+        return true;
+      }
+      if (!Array.isArray(body.segmentIds) && !Array.isArray(body.excludedSegmentIds)) {
+        sendJson(res, 400, { ok: false, error: 'segmentIds or excludedSegmentIds is required' });
+        return true;
+      }
+      const result = await enrollFromSegments({
+        conversationId: body.conversationId,
+        segmentIds: Array.isArray(body.segmentIds) ? body.segmentIds : [],
+        speakerMode: body.speakerMode === 'existing' ? 'existing' : 'new',
+        speakerId: body.speakerId || null,
+        speakerName: body.speakerName || null,
+        identityLabel: body.identityLabel || null,
+        excludedSegmentIds: Array.isArray(body.excludedSegmentIds) ? body.excludedSegmentIds : [],
+      });
+      sendJson(res, 200, { ok: true, data: result });
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: String((err as Error)?.message ?? err) });
+    }
     return true;
   }
 

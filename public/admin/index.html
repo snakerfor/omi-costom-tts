@@ -59,6 +59,7 @@
           <div class="subtabs">
             <button class="subtab-button active" type="button" data-speaker-view="directory">正式发言人</button>
             <button class="subtab-button" type="button" data-speaker-view="candidates">待确认候选</button>
+            <button class="subtab-button" type="button" data-speaker-view="voiceprint">讯飞 Segment 确认</button>
           </div>
 
           <section class="speaker-view active" id="speaker-view-directory">
@@ -192,6 +193,99 @@
                     <h3>候选切片（文本 + 音频）</h3>
                     <p class="subtle">请先听音频并看文本，再标注“这条切片是谁”。当你选择“保留”时，人物姓名必填。</p>
                     <div id="seed-candidate-list" class="segment-list"></div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <section class="speaker-view" id="speaker-view-voiceprint">
+            <div class="toolbar voiceprint-toolbar">
+              <select id="voiceprint-conversation-select">
+                <option value="">选择会话</option>
+              </select>
+              <button id="voiceprint-refresh-conversations" type="button" class="secondary-button">刷新会话列表</button>
+              <button id="voiceprint-scan" type="button">扫描当前会话</button>
+              <button id="voiceprint-backfill" type="button" class="secondary-button">回刷未确认</button>
+            </div>
+
+            <div class="voiceprint-stats">
+              <div class="memory-stat-card"><span class="meta-label">总 segment</span><strong id="voiceprint-total-count">0</strong></div>
+              <div class="memory-stat-card"><span class="meta-label">自动命中</span><strong id="voiceprint-auto-hit-count">0</strong></div>
+              <div class="memory-stat-card"><span class="meta-label">人工确认</span><strong id="voiceprint-human-count">0</strong></div>
+              <div class="memory-stat-card"><span class="meta-label">未确认</span><strong id="voiceprint-unresolved-count">0</strong></div>
+              <div class="memory-stat-card"><span class="meta-label">跳过太短</span><strong id="voiceprint-skipped-count">0</strong></div>
+              <div class="memory-stat-card"><span class="meta-label">错误</span><strong id="voiceprint-error-count">0</strong></div>
+            </div>
+
+            <div class="two-column">
+              <section class="card list-card">
+                <div class="card-header">
+                  <h2>待确认 Segment</h2>
+                  <div class="badge-row">
+                    <span class="badge">已选 <strong id="voiceprint-selected-count">0</strong></span>
+                    <button id="voiceprint-clear-selection" type="button" class="secondary-button">清空选择</button>
+                  </div>
+                </div>
+                <div id="voiceprint-pending-list" class="list voiceprint-list"></div>
+              </section>
+
+              <section class="card detail-card">
+                <div class="detail">
+                  <div class="detail-header">
+                    <div>
+                      <p class="eyebrow">Segment 注册</p>
+                      <h2 id="voiceprint-panel-title">选择一个会话后扫描</h2>
+                    </div>
+                    <div id="voiceprint-panel-badges" class="badge-row"></div>
+                  </div>
+
+                  <div class="detail-section">
+                    <h3>批量操作</h3>
+                    <p class="subtle">先在左侧勾选 segment，再选择“已有发言人”或“新建发言人”进行注册；也可以直接排除所选 segment。</p>
+                    <div class="form-grid voiceprint-form">
+                      <label class="full-width">
+                        <span>目标模式</span>
+                        <select id="voiceprint-speaker-mode">
+                          <option value="new">新建发言人并注册</option>
+                          <option value="existing">绑定已有发言人</option>
+                        </select>
+                      </label>
+                      <label id="voiceprint-existing-speaker-field" class="full-width hidden">
+                        <span>已有发言人</span>
+                        <select id="voiceprint-existing-speaker">
+                          <option value="">请选择已有发言人</option>
+                        </select>
+                      </label>
+                      <label id="voiceprint-new-name-field">
+                        <span>新发言人姓名</span>
+                        <input id="voiceprint-new-speaker-name" type="text" placeholder="例如：张三" />
+                      </label>
+                      <label id="voiceprint-new-identity-field">
+                        <span>身份标签</span>
+                        <select id="voiceprint-new-identity">
+                          <option value="">未确认</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="detail-section">
+                    <h3>执行</h3>
+                    <div class="actions voiceprint-actions">
+                      <button id="voiceprint-enroll-existing" type="button" class="secondary-button">确认为已有发言人</button>
+                      <button id="voiceprint-enroll-new" type="button">创建新发言人并注册</button>
+                      <button id="voiceprint-exclude" type="button" class="secondary-button">排除所选 segment</button>
+                    </div>
+                  </div>
+
+                  <div class="detail-section">
+                    <h3>当前会话</h3>
+                    <div class="meta-grid voiceprint-meta">
+                      <div><span class="meta-label">Conversation ID</span><span id="voiceprint-conversation-id">-</span></div>
+                      <div><span class="meta-label">当前状态</span><span id="voiceprint-current-status">-</span></div>
+                      <div><span class="meta-label">选择数</span><span id="voiceprint-selected-summary">0</span></div>
+                    </div>
                   </div>
                 </div>
               </section>

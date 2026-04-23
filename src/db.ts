@@ -366,6 +366,64 @@ export function initDb(): void {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS speaker_voiceprint_features (
+      id TEXT PRIMARY KEY,
+      speaker_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      group_id TEXT NOT NULL,
+      feature_id TEXT NOT NULL,
+      feature_version INTEGER NOT NULL DEFAULT 1,
+      status TEXT NOT NULL DEFAULT 'active',
+      source_enrollment_batch_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(provider, group_id, feature_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS segment_voiceprint_matches (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      segment_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      group_id TEXT,
+      request_audio_path TEXT,
+      request_duration_ms INTEGER,
+      top_feature_id TEXT,
+      top_speaker_id TEXT,
+      top_score REAL,
+      second_feature_id TEXT,
+      second_speaker_id TEXT,
+      second_score REAL,
+      decision TEXT NOT NULL,
+      raw_response_json TEXT,
+      error_message TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS speaker_enrollment_batches (
+      id TEXT PRIMARY KEY,
+      speaker_id TEXT,
+      provider TEXT NOT NULL,
+      group_id TEXT NOT NULL,
+      feature_id TEXT,
+      action TEXT NOT NULL,
+      status TEXT NOT NULL,
+      audio_path TEXT,
+      duration_ms INTEGER,
+      audio_size_bytes INTEGER,
+      error_message TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS speaker_enrollment_segments (
+      enrollment_batch_id TEXT NOT NULL,
+      segment_id TEXT NOT NULL,
+      decision TEXT NOT NULL DEFAULT 'keep',
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (enrollment_batch_id, segment_id)
+    );
   `);
 
   addColumnIfMissing('speakers', 'identity_label', 'TEXT');
@@ -403,6 +461,26 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_speaker_candidate_segments_segment_id ON speaker_candidate_segments(segment_id);
     CREATE INDEX IF NOT EXISTS idx_speaker_candidate_clips_candidate_id ON speaker_candidate_clips(candidate_id);
     CREATE INDEX IF NOT EXISTS idx_speaker_candidate_clips_segment_id ON speaker_candidate_clips(segment_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_speaker_voiceprint_features_unique
+      ON speaker_voiceprint_features(provider, group_id, feature_id);
+    CREATE INDEX IF NOT EXISTS idx_speaker_voiceprint_features_speaker_id
+      ON speaker_voiceprint_features(speaker_id);
+    CREATE INDEX IF NOT EXISTS idx_speaker_voiceprint_features_status
+      ON speaker_voiceprint_features(status);
+    CREATE INDEX IF NOT EXISTS idx_segment_voiceprint_matches_segment_id
+      ON segment_voiceprint_matches(segment_id);
+    CREATE INDEX IF NOT EXISTS idx_segment_voiceprint_matches_conversation_id
+      ON segment_voiceprint_matches(conversation_id);
+    CREATE INDEX IF NOT EXISTS idx_segment_voiceprint_matches_decision
+      ON segment_voiceprint_matches(decision);
+    CREATE INDEX IF NOT EXISTS idx_speaker_enrollment_batches_speaker_id
+      ON speaker_enrollment_batches(speaker_id);
+    CREATE INDEX IF NOT EXISTS idx_speaker_enrollment_batches_status
+      ON speaker_enrollment_batches(status);
+    CREATE INDEX IF NOT EXISTS idx_speaker_enrollment_segments_batch_id
+      ON speaker_enrollment_segments(enrollment_batch_id);
+    CREATE INDEX IF NOT EXISTS idx_speaker_enrollment_segments_segment_id
+      ON speaker_enrollment_segments(segment_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_omi_video_chunks_unique ON omi_video_chunks(source_key, video_chunk_path);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_omi_screenshots_unique ON omi_screenshots(source_key, source_screenshot_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_omi_transcription_sessions_unique ON omi_transcription_sessions(source_key, source_session_id);

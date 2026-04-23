@@ -13,6 +13,19 @@
     candidates: [],
     selectedCandidateId: null,
     candidateDetail: null,
+    voiceprintConversations: [],
+    voiceprintConversationId: null,
+    voiceprintPendingSegments: [],
+    voiceprintStats: {
+      totalSegments: 0,
+      autoHitCount: 0,
+      humanConfirmedCount: 0,
+      unresolvedCount: 0,
+      skippedShortCount: 0,
+      errorCount: 0,
+    },
+    voiceprintSelectedSegmentIds: new Set(),
+    voiceprintSpeakers: [],
   };
 
   function qs(selector) {
@@ -142,6 +155,228 @@
   async function loadMemoryStatus() {
     const result = await apiGet('/api/knowledge/memories/status');
     renderMemoryStatus(result.data);
+  }
+
+  function renderVoiceprintStats(stats) {
+    const current = stats || state.voiceprintStats;
+    qs('#voiceprint-total-count').textContent = String(current.totalSegments || 0);
+    qs('#voiceprint-auto-hit-count').textContent = String(current.autoHitCount || 0);
+    qs('#voiceprint-human-count').textContent = String(current.humanConfirmedCount || 0);
+    qs('#voiceprint-unresolved-count').textContent = String(current.unresolvedCount || 0);
+    qs('#voiceprint-skipped-count').textContent = String(current.skippedShortCount || 0);
+    qs('#voiceprint-error-count').textContent = String(current.errorCount || 0);
+  }
+
+  function getVoiceprintSelectedIds() {
+    return Array.from(state.voiceprintSelectedSegmentIds);
+  }
+
+  function updateVoiceprintSelectionSummary() {
+    const selectedCount = state.voiceprintSelectedSegmentIds.size;
+    qs('#voiceprint-selected-count').textContent = String(selectedCount);
+    qs('#voiceprint-selected-summary').textContent = `${selectedCount} 条`;
+  }
+
+  function setVoiceprintConversationOptions(conversations) {
+    state.voiceprintConversations = Array.isArray(conversations) ? conversations : [];
+    const select = qs('#voiceprint-conversation-select');
+    const options = ['<option value="">选择会话</option>']
+      .concat(state.voiceprintConversations.map((conversation) => `
+        <option value="${escapeHtml(conversation.id)}">
+          ${escapeHtml(formatDate(conversation.started_at))} / ${escapeHtml(conversation.id)}
+        </option>
+      `));
+    select.innerHTML = options.join('');
+    if (state.voiceprintConversationId) {
+      select.value = state.voiceprintConversationId;
+    }
+  }
+
+  function setVoiceprintSpeakerOptions(speakers) {
+    state.voiceprintSpeakers = Array.isArray(speakers) ? speakers : [];
+    const select = qs('#voiceprint-existing-speaker');
+    select.innerHTML = '<option value="">请选择已有发言人</option>' + state.voiceprintSpeakers.map((speaker) => `
+      <option value="${escapeHtml(speaker.id)}">${escapeHtml(speaker.name || speaker.display_label || speaker.id)}</option>
+    `).join('');
+  }
+
+  function renderVoiceprintPanel(detail) {
+    const conversationId = detail?.conversationId || state.voiceprintConversationId || '-';
+    qs('#voiceprint-panel-title').textContent = detail ? `会话 ${conversationId}` : '选择一个会话后扫描';
+    qs('#voiceprint-conversation-id').textContent = conversationId || '-';
+    qs('#voiceprint-current-status').textContent = detail ? '已加载待确认列表' : '未加载';
+    qs('#voiceprint-panel-badges').innerHTML = detail
+      ? [
+        `<span class="badge">待确认 ${detail.stats?.unresolvedCount || 0}</span>`,
+        `<span class="badge">自动命中 ${detail.stats?.autoHitCount || 0}</span>`,
+      ].join('')
+      : '';
+  }
+
+  function renderVoiceprintPendingList() {
+    const listEl = qs('#voiceprint-pending-list');
+    const filterText = '';
+    const rows = state.voiceprintPendingSegments || [];
+    listEl.innerHTML = rows.length
+      ? rows.map((item) => {
+        const checked = state.voiceprintSelectedSegmentIds.has(item.segmentId) ? 'checked' : '';
+        const scoreText = item.topScore == null ? '-' : item.topScore.toFixed(1);
+        const secondScoreText = item.secondScore == null ? '-' : item.secondScore.toFixed(1);
+        const hasAudio = !!item.audioUrl;
+        return `
+          <article class="segment-item voiceprint-segment ${checked ? 'active' : ''}" data-voiceprint-segment-id="${escapeHtml(item.segmentId)}">
+            <div class="voiceprint-segment-top">
+              <label class="voiceprint-check">
+                <input type="checkbox" data-voiceprint-select ${checked} />
+                <span>选择</span>
+              </label>
+              <div class="segment-title">
+                <span>${escapeHtml(formatSeconds(item.startMs))} - ${escapeHtml(formatSeconds(item.endMs))}</span>
+                <span class="subtle">${escapeHtml(item.speakerLabel || '原始标签未标注')}</span>
+              </div>
+            </div>
+            <div class="badge-row">
+              <span class="badge">${escapeHtml(item.decision || 'pending')}</span>
+              <span class="badge">Top1 ${escapeHtml(scoreText)}</span>
+              <span class="badge">Top2 ${escapeHtml(secondScoreText)}</span>
+              <span class="badge ${item.resolutionMethod ? '' : 'warning'}">${escapeHtml(item.resolutionMethod || '未确认')}</span>
+            </div>
+            <p class="subtle">Segment ID: ${escapeHtml(item.segmentId)}</p>
+            <p>${highlightText(item.text || '', filterText)}</p>
+            ${hasAudio ? `<audio controls preload="none" src="${escapeHtml(item.audioUrl)}"></audio>` : '<p class="subtle">暂无音频，先执行扫描生成试听片段。</p>'}
+          </article>
+        `;
+      }).join('')
+      : '<p class="subtle">当前会话没有待确认 segment，或请先执行扫描。</p>';
+
+    listEl.querySelectorAll('[data-voiceprint-select]').forEach((node) => {
+      node.addEventListener('change', () => {
+        const row = node.closest('[data-voiceprint-segment-id]');
+        const segmentId = row?.getAttribute('data-voiceprint-segment-id');
+        if (!segmentId) return;
+        if (node.checked) {
+          state.voiceprintSelectedSegmentIds.add(segmentId);
+        } else {
+          state.voiceprintSelectedSegmentIds.delete(segmentId);
+        }
+        updateVoiceprintSelectionSummary();
+        renderVoiceprintPendingList();
+      });
+    });
+    updateVoiceprintSelectionSummary();
+  }
+
+  async function loadVoiceprintConversations() {
+    const result = await apiGet('/api/conversations?page=1&page_size=100');
+    setVoiceprintConversationOptions(result.data || []);
+    const preferredId = state.selectedConversationId || state.voiceprintConversationId || (result.data && result.data[0] && result.data[0].id);
+    if (preferredId) {
+      state.voiceprintConversationId = preferredId;
+      qs('#voiceprint-conversation-select').value = state.voiceprintConversationId;
+    }
+  }
+
+  async function loadVoiceprintSpeakers() {
+    const result = await apiGet('/api/speakers?confirmation=confirmed&page=1&page_size=200');
+    setVoiceprintSpeakerOptions(result.data || []);
+  }
+
+  async function loadVoiceprintPendingSegments() {
+    if (!state.voiceprintConversationId) {
+      state.voiceprintPendingSegments = [];
+      state.voiceprintStats = {
+        totalSegments: 0,
+        autoHitCount: 0,
+        humanConfirmedCount: 0,
+        unresolvedCount: 0,
+        skippedShortCount: 0,
+        errorCount: 0,
+      };
+      renderVoiceprintStats();
+      renderVoiceprintPendingList();
+      renderVoiceprintPanel(null);
+      return;
+    }
+
+    const result = await apiGet(`/api/admin/conversations/${encodeURIComponent(state.voiceprintConversationId)}/voiceprint/pending-segments`);
+    state.voiceprintPendingSegments = result.data.segments || [];
+    state.voiceprintStats = result.data.stats || state.voiceprintStats;
+    const validIds = new Set(state.voiceprintPendingSegments.map((segment) => segment.segmentId));
+    state.voiceprintSelectedSegmentIds = new Set([...state.voiceprintSelectedSegmentIds].filter((segmentId) => validIds.has(segmentId)));
+    renderVoiceprintStats();
+    renderVoiceprintPanel(result.data);
+    renderVoiceprintPendingList();
+  }
+
+  function updateVoiceprintSpeakerModeVisibility() {
+    const isExisting = qs('#voiceprint-speaker-mode').value === 'existing';
+    qs('#voiceprint-existing-speaker-field').classList.toggle('hidden', !isExisting);
+    qs('#voiceprint-new-name-field').classList.toggle('hidden', isExisting);
+    qs('#voiceprint-new-identity-field').classList.toggle('hidden', isExisting);
+  }
+
+  async function scanVoiceprintConversation() {
+    if (!state.voiceprintConversationId) {
+      throw new Error('请先选择会话');
+    }
+    const result = await apiSend(`/api/admin/conversations/${encodeURIComponent(state.voiceprintConversationId)}/voiceprint/xfyun/scan`, 'POST', {
+      onlyUnresolved: true,
+      limit: 100,
+      dryRun: false,
+    });
+    await loadVoiceprintPendingSegments();
+    window.alert(`扫描完成：自动命中 ${result.data.hit}，低置信 ${result.data.lowConfidence}，冲突 ${result.data.conflict}，未命中 ${result.data.noMatch}，跳过 ${result.data.skipped}，错误 ${result.data.error}`);
+  }
+
+  async function backfillVoiceprintConversation() {
+    if (!state.voiceprintConversationId) {
+      throw new Error('请先选择会话');
+    }
+    const result = await apiSend(`/api/admin/conversations/${encodeURIComponent(state.voiceprintConversationId)}/voiceprint/xfyun/backfill`, 'POST', {
+      onlyUnresolved: true,
+      limit: 100,
+      dryRun: false,
+    });
+    await loadVoiceprintPendingSegments();
+    window.alert(`回刷完成：自动命中 ${result.data.hit}，低置信 ${result.data.lowConfidence}，冲突 ${result.data.conflict}，未命中 ${result.data.noMatch}，跳过 ${result.data.skipped}，错误 ${result.data.error}`);
+  }
+
+  async function enrollVoiceprintSegments(mode) {
+    if (!state.voiceprintConversationId) {
+      throw new Error('请先选择会话');
+    }
+    const selectedIds = getVoiceprintSelectedIds();
+    if (!selectedIds.length && mode !== 'exclude') {
+      throw new Error('请先勾选至少一个 segment');
+    }
+
+    const body = {
+      conversationId: state.voiceprintConversationId,
+      segmentIds: mode === 'exclude' ? [] : selectedIds,
+      speakerMode: qs('#voiceprint-speaker-mode').value === 'existing' ? 'existing' : 'new',
+      speakerId: qs('#voiceprint-existing-speaker').value || null,
+      speakerName: qs('#voiceprint-new-speaker-name').value.trim() || null,
+      identityLabel: qs('#voiceprint-new-identity').value || null,
+      excludedSegmentIds: mode === 'exclude' ? selectedIds : [],
+    };
+
+    if (mode === 'existing' && !body.speakerId) {
+      throw new Error('请选择已有发言人');
+    }
+    if (mode === 'new' && !body.speakerName) {
+      throw new Error('请输入新发言人姓名');
+    }
+
+    const result = await apiSend('/api/admin/voiceprint/xfyun/enroll-from-segments', 'POST', body);
+    state.voiceprintSelectedSegmentIds.clear();
+    await loadVoiceprintPendingSegments();
+    await loadSpeakers(false);
+    await loadConversations(false);
+    if (result.data.action === 'exclude_segments') {
+      window.alert(`已排除 ${result.data.excludedSegmentCount} 条 segment。`);
+      return;
+    }
+    window.alert(`操作完成：${result.data.createdNewSpeaker ? '新建' : '更新'} speaker ${result.data.speakerId}，处理 ${result.data.processedSegmentCount} 条，排除 ${result.data.excludedSegmentCount} 条。`);
   }
 
   async function saveMemoryConfig() {
@@ -647,6 +882,18 @@
     document.querySelectorAll('.speaker-view').forEach((panel) => {
       panel.classList.toggle('active', panel.id === `speaker-view-${viewName}`);
     });
+    if (viewName === 'voiceprint') {
+      if (!state.voiceprintConversations.length) {
+        loadVoiceprintConversations().catch(showError);
+      }
+      if (!state.voiceprintSpeakers.length) {
+        loadVoiceprintSpeakers().catch(showError);
+      }
+      if (state.voiceprintConversationId) {
+        loadVoiceprintPendingSegments().catch(showError);
+      }
+      updateVoiceprintSpeakerModeVisibility();
+    }
   }
 
   function switchTab(tabName) {
@@ -716,10 +963,49 @@
     qs('#seed-refresh').addEventListener('click', () => loadSeedBatches().catch(showError));
     qs('#seed-save').addEventListener('click', () => saveSeedDecisions().catch(showError));
     qs('#seed-confirm').addEventListener('click', () => confirmSeedCandidate().catch(showError));
+
+    qs('#voiceprint-conversation-select').addEventListener('change', () => {
+      state.voiceprintConversationId = qs('#voiceprint-conversation-select').value || null;
+      state.voiceprintSelectedSegmentIds.clear();
+      loadVoiceprintPendingSegments().catch(showError);
+    });
+    qs('#voiceprint-refresh-conversations').addEventListener('click', () => {
+      loadVoiceprintConversations().then(() => loadVoiceprintPendingSegments()).catch(showError);
+    });
+    qs('#voiceprint-scan').addEventListener('click', () => scanVoiceprintConversation().catch(showError));
+    qs('#voiceprint-backfill').addEventListener('click', () => backfillVoiceprintConversation().catch(showError));
+    qs('#voiceprint-speaker-mode').addEventListener('change', updateVoiceprintSpeakerModeVisibility);
+    qs('#voiceprint-enroll-existing').addEventListener('click', () => enrollVoiceprintSegments('existing').catch(showError));
+    qs('#voiceprint-enroll-new').addEventListener('click', () => enrollVoiceprintSegments('new').catch(showError));
+    qs('#voiceprint-exclude').addEventListener('click', () => enrollVoiceprintSegments('exclude').catch(showError));
+    qs('#voiceprint-clear-selection').addEventListener('click', () => {
+      state.voiceprintSelectedSegmentIds.clear();
+      renderVoiceprintPendingList();
+      updateVoiceprintSelectionSummary();
+    });
   }
 
   bindEvents();
   switchTab(state.activeTab);
   switchSpeakerView(state.speakerView);
-  Promise.all([loadIdentityOptions(), loadSpeakers(true), loadConversations(true), loadMemoryStatus(), loadSeedBatches()]).catch(showError);
+  Promise.all([
+    loadIdentityOptions(),
+    loadSpeakers(true),
+    loadConversations(true),
+    loadMemoryStatus(),
+    loadSeedBatches(),
+    loadVoiceprintConversations(),
+    loadVoiceprintSpeakers(),
+  ]).then(() => {
+    if (!state.voiceprintConversationId) {
+      state.voiceprintConversationId = state.selectedConversationId || (state.voiceprintConversations[0] && state.voiceprintConversations[0].id) || null;
+      if (state.voiceprintConversationId) {
+        qs('#voiceprint-conversation-select').value = state.voiceprintConversationId;
+      }
+    }
+    updateVoiceprintSpeakerModeVisibility();
+    if (state.voiceprintConversationId) {
+      loadVoiceprintPendingSegments().catch(showError);
+    }
+  }).catch(showError);
 })();
