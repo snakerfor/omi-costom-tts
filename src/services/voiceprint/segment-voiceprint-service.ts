@@ -314,9 +314,9 @@ function classifyDecision(
 }
 
 function scoreThresholdForDuration(durationMs: number): number {
-  const defaultThreshold = Number(process.env.XFYUN_HIT_SCORE_THRESHOLD || 80);
+  const defaultThreshold = Number(process.env.XFYUN_HIT_SCORE_THRESHOLD || 50);
   const shortSegmentMs = Number(process.env.XFYUN_SHORT_SEGMENT_MS || 3000);
-  const shortThreshold = Number(process.env.XFYUN_SHORT_HIT_SCORE_THRESHOLD || Math.max(75, defaultThreshold));
+  const shortThreshold = Number(process.env.XFYUN_SHORT_HIT_SCORE_THRESHOLD || Math.max(60, defaultThreshold));
   return durationMs < shortSegmentMs ? shortThreshold : defaultThreshold;
 }
 
