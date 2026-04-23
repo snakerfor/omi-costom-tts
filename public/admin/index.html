@@ -58,7 +58,6 @@
         <section class="tab-panel active" id="tab-speakers">
           <div class="subtabs">
             <button class="subtab-button active" type="button" data-speaker-view="directory">正式发言人</button>
-            <button class="subtab-button" type="button" data-speaker-view="candidates">待确认候选</button>
             <button class="subtab-button" type="button" data-speaker-view="voiceprint">声纹复核/注册</button>
           </div>
 
@@ -151,49 +150,6 @@
                       <button type="submit">保存确认</button>
                     </div>
                   </form>
-                </div>
-              </section>
-            </div>
-          </section>
-
-          <section class="speaker-view" id="speaker-view-candidates">
-            <div class="toolbar">
-              <button id="seed-refresh">刷新候选</button>
-              <span id="seed-batch-count" class="subtle">共 0 条</span>
-            </div>
-
-            <div class="two-column">
-              <section class="card list-card">
-                <div class="card-header">
-                  <h2>待确认候选</h2>
-                </div>
-                <div id="seed-batch-list" class="list"></div>
-              </section>
-
-              <section class="card detail-card">
-                <div id="seed-empty" class="empty-state">请选择一个候选人，查看切片文本和音频。</div>
-                <div id="seed-detail" class="detail hidden">
-                  <div class="detail-header">
-                    <div>
-                      <p class="eyebrow">候选确认</p>
-                      <h2 id="seed-title">-</h2>
-                    </div>
-                    <div class="actions">
-                      <button id="seed-save" type="button">保存确认结果</button>
-                      <button id="seed-confirm" type="button">确认并归并</button>
-                    </div>
-                  </div>
-                  <div class="meta-grid">
-                    <div><span class="meta-label">候选 ID</span><span id="seed-batch-id"></span></div>
-                    <div><span class="meta-label">会话 ID</span><span id="seed-session-id"></span></div>
-                    <div><span class="meta-label">会话内编号</span><span id="seed-speaker-count"></span></div>
-                    <div><span class="meta-label">切片数</span><span id="seed-candidate-count"></span></div>
-                  </div>
-                  <div class="detail-section">
-                    <h3>候选切片（文本 + 音频）</h3>
-                    <p class="subtle">请先听音频并看文本，再标注“这条切片是谁”。当你选择“保留”时，人物姓名必填。</p>
-                    <div id="seed-candidate-list" class="segment-list"></div>
-                  </div>
                 </div>
               </section>
             </div>

@@ -10,9 +10,6 @@
     conversationPagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 },
     selectedConversationId: null,
     memoryStatus: null,
-    candidates: [],
-    selectedCandidateId: null,
-    candidateDetail: null,
     voiceprintConversations: [],
     voiceprintConversationId: null,
     voiceprintPendingSegments: [],
@@ -744,160 +741,6 @@
     renderConversationDetail(result.data);
   }
 
-  function candidateReasonLabel(value) {
-    if (value === 'low_confidence') return '低置信';
-    if (value === 'conflict') return '冲突';
-    if (value === 'embedding_unavailable') return '向量不可用';
-    return value || '-';
-  }
-
-  function renderSeedBatchList() {
-    qs('#seed-batch-count').textContent = `共 ${state.candidates.length} 条`;
-    const listEl = qs('#seed-batch-list');
-    listEl.innerHTML = state.candidates.map((item) => `
-      <article class="list-item ${item.id === state.selectedCandidateId ? 'active' : ''}" data-seed-batch-id="${escapeHtml(item.id)}">
-        <div class="list-item-title">
-          <span>${escapeHtml(item.conversation_id)} / ${escapeHtml(item.local_speaker_key || item.speaker_label || '-')}</span>
-          <span class="subtle">${escapeHtml(formatDate(item.created_at))}</span>
-        </div>
-        <div class="badge-row">
-          <span class="badge">${escapeHtml(item.local_speaker_key || 'local-?')}</span>
-          <span class="badge">${escapeHtml(candidateReasonLabel(item.decision_reason))}</span>
-          <span class="badge">clips ${item.clip_count}</span>
-          <span class="badge">best ${item.best_score == null ? '-' : item.best_score.toFixed(3)}</span>
-        </div>
-        <p class="subtle">${escapeHtml(item.raw_label_summary || 'raw labels unavailable')}</p>
-        <p class="subtle">${escapeHtml(item.best_match_name || item.best_match_speaker_id || '无推荐命中')}</p>
-        <p>${escapeHtml((item.sample_text || '').slice(0, 72) || '暂无样本文本')}</p>
-      </article>
-    `).join('') || '<p class="subtle">暂无候选批次。</p>';
-
-    listEl.querySelectorAll('[data-seed-batch-id]').forEach((node) => {
-      node.addEventListener('click', () => {
-        state.selectedCandidateId = node.getAttribute('data-seed-batch-id');
-        renderSeedBatchList();
-        loadSeedBatchDetail(state.selectedCandidateId).catch(showError);
-      });
-    });
-  }
-
-  function resetSeedDetail() {
-    state.candidateDetail = null;
-    qs('#seed-empty').classList.remove('hidden');
-    qs('#seed-detail').classList.add('hidden');
-  }
-
-  function renderSeedBatchDetail(detail) {
-    state.candidateDetail = detail;
-    qs('#seed-empty').classList.add('hidden');
-    qs('#seed-detail').classList.remove('hidden');
-    qs('#seed-title').textContent = detail.candidate.local_speaker_key || detail.candidate.best_match_name || detail.candidate.sample_text || detail.candidate.id;
-    qs('#seed-batch-id').textContent = detail.candidate.id;
-    qs('#seed-session-id').textContent = detail.candidate.session_id || '-';
-    qs('#seed-speaker-count').textContent = `${detail.candidate.local_speaker_key || '-'} / raw ${detail.candidate.raw_label_summary || detail.candidate.speaker_label || '-'}`;
-    qs('#seed-candidate-count').textContent = String(detail.clips.length);
-    const orderedClips = [...detail.clips].sort((a, b) => {
-      const startDiff = (a.start_ms || 0) - (b.start_ms || 0);
-      if (startDiff !== 0) return startDiff;
-      return (a.end_ms || 0) - (b.end_ms || 0);
-    });
-
-    qs('#seed-candidate-list').innerHTML = orderedClips.length
-      ? orderedClips.map((item, index) => `
-        <article class="segment-item seed-item" data-seed-segment-id="${escapeHtml(item.id)}">
-          <div class="segment-title">
-            <span>切片 ${index + 1}</span>
-            <span class="subtle">${Math.round((item.duration_ms || 0) / 1000)}s</span>
-          </div>
-          <div class="badge-row">
-            <span class="badge">会话内发言人 ${escapeHtml(detail.candidate.speaker_label || 'unknown')}</span>
-            <span class="badge">${escapeHtml(formatSeconds(item.start_ms))} - ${escapeHtml(formatSeconds(item.end_ms))}</span>
-          </div>
-          <p class="subtle">Segment ID: ${escapeHtml(item.segment_id || '-')}</p>
-          <p>${escapeHtml(item.text || '')}</p>
-          <audio controls preload="none" src="${escapeHtml(item.clip_url || '')}"></audio>
-          <div class="seed-actions">
-            <label>
-              <span class="meta-label">决策</span>
-              <select data-seed-decision>
-                <option value="">未选择</option>
-                <option value="keep" ${item.decision === 'keep' ? 'selected' : ''}>保留</option>
-                <option value="drop" ${item.decision === 'drop' ? 'selected' : ''}>排除</option>
-                <option value="uncertain" ${item.decision === 'uncertain' ? 'selected' : ''}>不确定</option>
-              </select>
-            </label>
-            <label>
-              <span class="meta-label">人物姓名（保留时必填）</span>
-              <input data-seed-person-name type="text" value="${escapeHtml(item.person_name || '')}" placeholder="例如：张三" />
-            </label>
-            <label class="full-width">
-              <span class="meta-label">备注（可选）</span>
-              <input data-seed-note type="text" value="${escapeHtml(item.note || '')}" placeholder="例如：背景噪音大/说话人不一致" />
-            </label>
-          </div>
-        </article>
-      `).join('')
-      : '<p class="subtle">这个候选没有切片。</p>';
-  }
-
-  async function loadSeedBatches() {
-    const result = await apiGet('/api/candidates');
-    state.candidates = result.data || [];
-    renderSeedBatchList();
-
-    const stillExists = state.candidates.some((item) => item.id === state.selectedCandidateId);
-    if (stillExists) {
-      await loadSeedBatchDetail(state.selectedCandidateId);
-      return;
-    }
-    if (state.candidates[0]) {
-      state.selectedCandidateId = state.candidates[0].id;
-      renderSeedBatchList();
-      await loadSeedBatchDetail(state.selectedCandidateId);
-      return;
-    }
-    state.selectedCandidateId = null;
-    resetSeedDetail();
-  }
-
-  async function loadSeedBatchDetail(candidateId) {
-    if (!candidateId) return;
-    const result = await apiGet(`/api/candidates/${encodeURIComponent(candidateId)}`);
-    renderSeedBatchDetail(result.data);
-  }
-
-  async function saveSeedDecisions() {
-    if (!state.selectedCandidateId || !state.candidateDetail) return;
-    const items = Array.from(document.querySelectorAll('#seed-candidate-list [data-seed-segment-id]'));
-    const decisions = items.map((node) => ({
-      clip_id: node.getAttribute('data-seed-segment-id'),
-      decision: node.querySelector('[data-seed-decision]').value,
-      person_name: (node.querySelector('[data-seed-person-name]').value || '').trim() || null,
-      note: node.querySelector('[data-seed-note]').value || null,
-    }));
-    const filtered = decisions.filter((item) => ['keep', 'drop', 'uncertain'].includes(item.decision));
-    const invalidKeep = filtered.find((item) => item.decision === 'keep' && !item.person_name);
-    if (invalidKeep) {
-      throw new Error(`clip ${invalidKeep.clip_id} 选择“保留”时必须填写人物姓名`);
-    }
-    await apiSend(`/api/candidates/${encodeURIComponent(state.selectedCandidateId)}/decisions`, 'POST', {
-      decisions: filtered,
-    });
-    await loadSeedBatches();
-    window.alert(`已保存 ${filtered.length} 条确认结果`);
-  }
-
-  async function confirmSeedCandidate() {
-    if (!state.selectedCandidateId) return;
-    const result = await apiSend(`/api/candidates/${encodeURIComponent(state.selectedCandidateId)}/confirm`, 'POST', {});
-    await loadSeedBatches();
-    await loadSpeakers(false);
-    await loadConversations(false);
-    window.alert(
-      `确认完成：${result.data.personName}，${result.data.createdNewSpeaker ? '新建' : '并入'} speaker，自动归并 ${result.data.mergedCandidateCount} 个候选，更新 ${result.data.updatedSegmentCount} 条片段。`,
-    );
-  }
-
   function switchSpeakerView(viewName) {
     state.speakerView = viewName;
     document.querySelectorAll('.subtab-button').forEach((button) => {
@@ -984,10 +827,6 @@
     qs('#memory-ai-enabled').addEventListener('change', () => saveMemoryConfig().catch(showError));
     qs('#memory-sync-omi').addEventListener('click', () => syncOmiMemories().catch(showError));
     qs('#memory-run-ai').addEventListener('click', () => runAiSupplement().catch(showError));
-    qs('#seed-refresh').addEventListener('click', () => loadSeedBatches().catch(showError));
-    qs('#seed-save').addEventListener('click', () => saveSeedDecisions().catch(showError));
-    qs('#seed-confirm').addEventListener('click', () => confirmSeedCandidate().catch(showError));
-
     qs('#voiceprint-conversation-select').addEventListener('change', () => {
       state.voiceprintConversationId = qs('#voiceprint-conversation-select').value || null;
       state.voiceprintSelectedSegmentIds.clear();
@@ -1023,7 +862,6 @@
     loadSpeakers(true),
     loadConversations(true),
     loadMemoryStatus(),
-    loadSeedBatches(),
     loadVoiceprintConversations(),
     loadVoiceprintSpeakers(),
   ]).then(() => {

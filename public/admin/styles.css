@@ -248,9 +248,7 @@ button {
 .toolbar input,
 .toolbar select,
 .form-grid input,
-.form-grid textarea,
-.seed-actions input,
-.seed-actions select {
+.form-grid textarea {
   width: 100%;
   padding: 11px 12px;
   border: 1px solid var(--border);
@@ -418,23 +416,6 @@ button,
 .segment-item p {
   margin-top: 8px;
   line-height: 1.6;
-}
-
-.seed-item audio {
-  width: 100%;
-  margin-top: 10px;
-}
-
-.seed-actions {
-  margin-top: 12px;
-  display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: 10px;
-}
-
-.seed-actions label {
-  display: grid;
-  gap: 6px;
 }
 
 .speaker-summary-item {
@@ -662,7 +643,6 @@ button,
 
   .meta-grid,
   .form-grid,
-  .seed-actions,
   .transcript-row,
   .voiceprint-segment-top {
     grid-template-columns: 1fr;
