@@ -93,7 +93,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   const sentAudioRing = new SentAudioRingBuffer(
     Number(process.env.XFYUN_REALTIME_RING_BUFFER_MS ?? 120000),
   );
-  const realtimeVoiceprintTimeoutMs = Number(process.env.XFYUN_REALTIME_TIMEOUT_MS ?? 15000);
+  const realtimeVoiceprintTimeoutMs = Number(process.env.XFYUN_REALTIME_TIMEOUT_MS ?? 30000);
   const streamSilenceFinalizeMs = Number(process.env.STREAM_SILENCE_FINALIZE_MS ?? 0);
   const streamNoAudioFinalizeMs = Number(process.env.STREAM_NO_AUDIO_FINALIZE_MS ?? 0);
   const streamIdleFinalizeMs = Number(process.env.STREAM_IDLE_FINALIZE_MS ?? 0);
