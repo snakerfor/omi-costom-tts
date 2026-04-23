@@ -313,6 +313,13 @@ function classifyDecision(
   return { decision: LOW_CONFIDENCE_METHOD, top, second };
 }
 
+function scoreThresholdForDuration(durationMs: number): number {
+  const defaultThreshold = Number(process.env.XFYUN_HIT_SCORE_THRESHOLD || 80);
+  const shortSegmentMs = Number(process.env.XFYUN_SHORT_SEGMENT_MS || 3000);
+  const shortThreshold = Number(process.env.XFYUN_SHORT_HIT_SCORE_THRESHOLD || Math.max(75, defaultThreshold));
+  return durationMs < shortSegmentMs ? shortThreshold : defaultThreshold;
+}
+
 function buildMatchRow(input: {
   conversationId: string;
   segmentId: string;
@@ -515,7 +522,6 @@ export async function scanConversationVoiceprintSegments(
   const onlyUnresolved = options.onlyUnresolved !== false;
   const dryRun = !!options.dryRun;
   const segments = getSegmentRows(conversationId, onlyUnresolved, limit);
-  const threshold = Number(process.env.XFYUN_HIT_SCORE_THRESHOLD || 80);
   const margin = Number(process.env.XFYUN_HIT_MARGIN || 8);
   const minSegmentMs = Number(process.env.XFYUN_MIN_SEGMENT_MS || 3000);
   const maxQueryMs = Number(process.env.XFYUN_MAX_QUERY_MS || 8000);
@@ -576,6 +582,7 @@ export async function scanConversationVoiceprintSegments(
       const scoreList = [...response.scoreList]
         .filter(item => Number.isFinite(Number(item?.score)))
         .sort((a, b) => normalizeScore(Number(b.score)) - normalizeScore(Number(a.score)));
+      const threshold = scoreThresholdForDuration(prep.durationMs);
       const { decision, top, second } = classifyDecision(scoreList, threshold, margin);
       const topSpeaker = mapFeatureIdToSpeaker(config.groupId, top?.featureId);
       const secondSpeaker = mapFeatureIdToSpeaker(config.groupId, second?.featureId);
