@@ -25,6 +25,7 @@
     "seed:candidates": "ts-node scripts/generate-seed-candidates.ts",
     "rebuild:confirmed-embeddings": "ts-node scripts/rebuild-confirmed-embeddings.ts",
     "disable:legacy-anonymous-embeddings": "ts-node scripts/disable-legacy-anonymous-embeddings.ts",
+    "xfyun:create-group": "ts-node scripts/create-xfyun-voiceprint-group.ts",
     "omimem": "ts-node scripts/omimem.ts",
     "generate:pcm": "ffmpeg -i tests/test.m4a -f s16le -ar 16000 -ac 1 tests/test.pcm"
   },
