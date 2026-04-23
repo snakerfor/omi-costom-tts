@@ -26,6 +26,7 @@
     },
     voiceprintSelectedSegmentIds: new Set(),
     voiceprintSpeakers: [],
+    voiceprintStatusFilter: 'actionable',
   };
 
   function qs(selector) {
@@ -167,6 +168,42 @@
     qs('#voiceprint-error-count').textContent = String(current.errorCount || 0);
   }
 
+  function voiceprintDecisionLabel(value) {
+    const labels = {
+      xfyun_low_confidence: '低置信',
+      xfyun_conflict: '冲突',
+      xfyun_no_match: '未命中',
+      xfyun_error: '错误',
+      xfyun_skipped_short: '太短跳过',
+      xfyun_segment_hit: '自动命中',
+      xfyun_current_conversation_backfill_hit: '回刷命中',
+      human_segment_confirmed: '人工确认',
+      human_segment_excluded: '已排除',
+      pending: '待扫描',
+    };
+    return labels[value] || value || '待处理';
+  }
+
+  function voiceprintDecisionClass(value) {
+    if (value === 'xfyun_error') return 'danger';
+    if (value === 'xfyun_low_confidence' || value === 'xfyun_conflict') return 'warning';
+    return '';
+  }
+
+  function getVisibleVoiceprintSegments() {
+    const rows = state.voiceprintPendingSegments || [];
+    const filter = state.voiceprintStatusFilter || 'actionable';
+    if (filter === 'all') return rows;
+    return rows.filter((item) => {
+      const decision = item.decision || item.resolutionMethod || 'pending';
+      if (filter === 'low') return decision === 'xfyun_low_confidence';
+      if (filter === 'error') return decision === 'xfyun_error';
+      if (filter === 'nomatch') return decision === 'xfyun_no_match';
+      if (filter === 'conflict') return decision === 'xfyun_conflict';
+      return ['pending', 'xfyun_low_confidence', 'xfyun_conflict', 'xfyun_no_match', 'xfyun_error'].includes(decision);
+    });
+  }
+
   function getVoiceprintSelectedIds() {
     return Array.from(state.voiceprintSelectedSegmentIds);
   }
@@ -202,9 +239,9 @@
 
   function renderVoiceprintPanel(detail) {
     const conversationId = detail?.conversationId || state.voiceprintConversationId || '-';
-    qs('#voiceprint-panel-title').textContent = detail ? `会话 ${conversationId}` : '选择一个会话后扫描';
+    qs('#voiceprint-panel-title').textContent = detail ? `会话 ${conversationId}` : '选择一个会话后离线扫描';
     qs('#voiceprint-conversation-id').textContent = conversationId || '-';
-    qs('#voiceprint-current-status').textContent = detail ? '已加载待确认列表' : '未加载';
+    qs('#voiceprint-current-status').textContent = detail ? `已加载 ${getVisibleVoiceprintSegments().length} 条可见待处理` : '未加载';
     qs('#voiceprint-panel-badges').innerHTML = detail
       ? [
         `<span class="badge">待确认 ${detail.stats?.unresolvedCount || 0}</span>`,
@@ -216,7 +253,7 @@
   function renderVoiceprintPendingList() {
     const listEl = qs('#voiceprint-pending-list');
     const filterText = '';
-    const rows = state.voiceprintPendingSegments || [];
+    const rows = getVisibleVoiceprintSegments();
     listEl.innerHTML = rows.length
       ? rows.map((item) => {
         const checked = state.voiceprintSelectedSegmentIds.has(item.segmentId) ? 'checked' : '';
@@ -236,10 +273,10 @@
               </div>
             </div>
             <div class="badge-row">
-              <span class="badge">${escapeHtml(item.decision || 'pending')}</span>
+              <span class="badge ${voiceprintDecisionClass(item.decision)}">${escapeHtml(voiceprintDecisionLabel(item.decision || 'pending'))}</span>
               <span class="badge">Top1 ${escapeHtml(scoreText)}</span>
               <span class="badge">Top2 ${escapeHtml(secondScoreText)}</span>
-              <span class="badge ${item.resolutionMethod ? '' : 'warning'}">${escapeHtml(item.resolutionMethod || '未确认')}</span>
+              <span class="badge ${item.resolutionMethod ? '' : 'warning'}">${escapeHtml(voiceprintDecisionLabel(item.resolutionMethod || '未确认'))}</span>
             </div>
             <p class="subtle">Segment ID: ${escapeHtml(item.segmentId)}</p>
             <p>${highlightText(item.text || '', filterText)}</p>
@@ -247,7 +284,7 @@
           </article>
         `;
       }).join('')
-      : '<p class="subtle">当前会话没有待确认 segment，或请先执行扫描。</p>';
+      : '<p class="subtle">当前筛选条件下没有待处理 segment。可切换筛选或执行离线扫描未确认。</p>';
 
     listEl.querySelectorAll('[data-voiceprint-select]').forEach((node) => {
       node.addEventListener('change', () => {
@@ -301,7 +338,7 @@
     const result = await apiGet(`/api/admin/conversations/${encodeURIComponent(state.voiceprintConversationId)}/voiceprint/pending-segments`);
     state.voiceprintPendingSegments = result.data.segments || [];
     state.voiceprintStats = result.data.stats || state.voiceprintStats;
-    const validIds = new Set(state.voiceprintPendingSegments.map((segment) => segment.segmentId));
+    const validIds = new Set(getVisibleVoiceprintSegments().map((segment) => segment.segmentId));
     state.voiceprintSelectedSegmentIds = new Set([...state.voiceprintSelectedSegmentIds].filter((segmentId) => validIds.has(segmentId)));
     renderVoiceprintStats();
     renderVoiceprintPanel(result.data);
@@ -328,25 +365,12 @@
     window.alert(`扫描完成：自动命中 ${result.data.hit}，低置信 ${result.data.lowConfidence}，冲突 ${result.data.conflict}，未命中 ${result.data.noMatch}，跳过 ${result.data.skipped}，错误 ${result.data.error}`);
   }
 
-  async function backfillVoiceprintConversation() {
-    if (!state.voiceprintConversationId) {
-      throw new Error('请先选择会话');
-    }
-    const result = await apiSend(`/api/admin/conversations/${encodeURIComponent(state.voiceprintConversationId)}/voiceprint/xfyun/backfill`, 'POST', {
-      onlyUnresolved: true,
-      limit: 100,
-      dryRun: false,
-    });
-    await loadVoiceprintPendingSegments();
-    window.alert(`回刷完成：自动命中 ${result.data.hit}，低置信 ${result.data.lowConfidence}，冲突 ${result.data.conflict}，未命中 ${result.data.noMatch}，跳过 ${result.data.skipped}，错误 ${result.data.error}`);
-  }
-
   async function enrollVoiceprintSegments(mode) {
     if (!state.voiceprintConversationId) {
       throw new Error('请先选择会话');
     }
     const selectedIds = getVoiceprintSelectedIds();
-    if (!selectedIds.length && mode !== 'exclude') {
+    if (!selectedIds.length) {
       throw new Error('请先勾选至少一个 segment');
     }
 
@@ -972,8 +996,14 @@
     qs('#voiceprint-refresh-conversations').addEventListener('click', () => {
       loadVoiceprintConversations().then(() => loadVoiceprintPendingSegments()).catch(showError);
     });
+    qs('#voiceprint-status-filter').addEventListener('change', () => {
+      state.voiceprintStatusFilter = qs('#voiceprint-status-filter').value || 'actionable';
+      const visibleIds = new Set(getVisibleVoiceprintSegments().map((segment) => segment.segmentId));
+      state.voiceprintSelectedSegmentIds = new Set([...state.voiceprintSelectedSegmentIds].filter((segmentId) => visibleIds.has(segmentId)));
+      renderVoiceprintPanel({ conversationId: state.voiceprintConversationId, stats: state.voiceprintStats });
+      renderVoiceprintPendingList();
+    });
     qs('#voiceprint-scan').addEventListener('click', () => scanVoiceprintConversation().catch(showError));
-    qs('#voiceprint-backfill').addEventListener('click', () => backfillVoiceprintConversation().catch(showError));
     qs('#voiceprint-speaker-mode').addEventListener('change', updateVoiceprintSpeakerModeVisibility);
     qs('#voiceprint-enroll-existing').addEventListener('click', () => enrollVoiceprintSegments('existing').catch(showError));
     qs('#voiceprint-enroll-new').addEventListener('click', () => enrollVoiceprintSegments('new').catch(showError));

@@ -59,7 +59,7 @@
           <div class="subtabs">
             <button class="subtab-button active" type="button" data-speaker-view="directory">正式发言人</button>
             <button class="subtab-button" type="button" data-speaker-view="candidates">待确认候选</button>
-            <button class="subtab-button" type="button" data-speaker-view="voiceprint">讯飞 Segment 确认</button>
+            <button class="subtab-button" type="button" data-speaker-view="voiceprint">声纹复核/注册</button>
           </div>
 
           <section class="speaker-view active" id="speaker-view-directory">
@@ -200,13 +200,24 @@
           </section>
 
           <section class="speaker-view" id="speaker-view-voiceprint">
+            <div class="info-panel voiceprint-info">
+              <strong>用途说明</strong>
+              <p>实时转录已经会在 final 返回前尝试讯飞实名。这里保留为离线复核工具：用于查看低置信/错误片段、人工确认、排除无效片段，以及用确认片段注册或更新声纹。</p>
+            </div>
             <div class="toolbar voiceprint-toolbar">
               <select id="voiceprint-conversation-select">
                 <option value="">选择会话</option>
               </select>
+              <select id="voiceprint-status-filter">
+                <option value="actionable">需处理</option>
+                <option value="low">低置信</option>
+                <option value="error">错误</option>
+                <option value="nomatch">未命中</option>
+                <option value="conflict">冲突</option>
+                <option value="all">全部待处理</option>
+              </select>
               <button id="voiceprint-refresh-conversations" type="button" class="secondary-button">刷新会话列表</button>
-              <button id="voiceprint-scan" type="button">扫描当前会话</button>
-              <button id="voiceprint-backfill" type="button" class="secondary-button">回刷未确认</button>
+              <button id="voiceprint-scan" type="button">离线扫描未确认</button>
             </div>
 
             <div class="voiceprint-stats">
@@ -242,7 +253,7 @@
 
                   <div class="detail-section">
                     <h3>批量操作</h3>
-                    <p class="subtle">先在左侧勾选 segment，再选择“已有发言人”或“新建发言人”进行注册；也可以直接排除所选 segment。</p>
+                    <p class="subtle">先在左侧勾选确认可靠的 segment，再绑定已有发言人或新建发言人注册声纹。无法确认或音频无效的片段请排除，避免重复扫描。</p>
                     <div class="form-grid voiceprint-form">
                       <label class="full-width">
                         <span>目标模式</span>
