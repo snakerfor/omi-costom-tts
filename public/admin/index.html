@@ -50,18 +50,13 @@
       </section>
 
       <nav class="tabs">
-        <button class="tab-button active" data-tab="speakers">发言人确认</button>
+        <button class="tab-button active" data-tab="directory">正式发言人</button>
+        <button class="tab-button" data-tab="voiceprint">声纹复核/注册</button>
         <button class="tab-button" data-tab="conversations">对话记录</button>
       </nav>
 
       <main>
-        <section class="tab-panel active" id="tab-speakers">
-          <div class="subtabs">
-            <button class="subtab-button active" type="button" data-speaker-view="directory">正式发言人</button>
-            <button class="subtab-button" type="button" data-speaker-view="voiceprint">声纹复核/注册</button>
-          </div>
-
-          <section class="speaker-view active" id="speaker-view-directory">
+        <section class="tab-panel active" id="tab-directory">
             <div class="toolbar">
               <input id="speaker-q" type="search" placeholder="搜索姓名、标签、身份、样本文本" />
               <select id="speaker-confirmation">
@@ -153,9 +148,9 @@
                 </div>
               </section>
             </div>
-          </section>
+        </section>
 
-          <section class="speaker-view" id="speaker-view-voiceprint">
+        <section class="tab-panel" id="tab-voiceprint">
             <div class="info-panel voiceprint-info">
               <strong>用途说明</strong>
               <p>实时转录已经会在 final 返回前尝试讯飞实名。这里保留为离线复核工具：用于查看低置信/错误片段、人工确认、排除无效片段，以及用确认片段注册或更新声纹。</p>
@@ -257,7 +252,6 @@
                 </div>
               </section>
             </div>
-          </section>
         </section>
 
         <section class="tab-panel" id="tab-conversations">

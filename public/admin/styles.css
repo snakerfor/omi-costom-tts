@@ -184,16 +184,6 @@ button {
   margin-bottom: 16px;
 }
 
-.subtabs {
-  display: inline-flex;
-  gap: 8px;
-  padding: 6px;
-  margin-bottom: 16px;
-  background: rgba(255, 255, 255, 0.68);
-  border: 1px solid var(--border);
-  border-radius: 18px;
-}
-
 .tab-button {
   padding: 10px 16px;
   border: 0;
@@ -202,19 +192,9 @@ button {
   cursor: pointer;
 }
 
-.tab-button.active,
-.subtab-button.active {
+.tab-button.active {
   background: var(--text);
   color: #fff;
-}
-
-.subtab-button {
-  padding: 9px 14px;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  border-radius: 999px;
 }
 
 .tab-panel {
@@ -222,14 +202,6 @@ button {
 }
 
 .tab-panel.active {
-  display: block;
-}
-
-.speaker-view {
-  display: none;
-}
-
-.speaker-view.active {
   display: block;
 }
 

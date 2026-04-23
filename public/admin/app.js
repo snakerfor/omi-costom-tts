@@ -1,7 +1,6 @@
 (function () {
   const state = {
-    activeTab: 'speakers',
-    speakerView: 'directory',
+    activeTab: 'directory',
     identityOptions: [],
     speakers: [],
     speakerPagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 },
@@ -728,7 +727,7 @@
 
     qs('#conversation-segments').querySelectorAll('[data-go-speaker]').forEach((node) => {
       node.addEventListener('click', () => {
-        switchTab('speakers');
+        switchTab('directory');
         state.selectedSpeakerId = node.getAttribute('data-go-speaker');
         loadSpeakers(false).catch(showError);
       });
@@ -741,15 +740,16 @@
     renderConversationDetail(result.data);
   }
 
-  function switchSpeakerView(viewName) {
-    state.speakerView = viewName;
-    document.querySelectorAll('.subtab-button').forEach((button) => {
-      button.classList.toggle('active', button.getAttribute('data-speaker-view') === viewName);
+  function switchTab(tabName) {
+    state.activeTab = tabName;
+    document.querySelectorAll('.tab-button').forEach((button) => {
+      button.classList.toggle('active', button.getAttribute('data-tab') === tabName);
     });
-    document.querySelectorAll('.speaker-view').forEach((panel) => {
-      panel.classList.toggle('active', panel.id === `speaker-view-${viewName}`);
+    document.querySelectorAll('.tab-panel').forEach((panel) => {
+      panel.classList.toggle('active', panel.id === `tab-${tabName}`);
     });
-    if (viewName === 'voiceprint') {
+
+    if (tabName === 'voiceprint') {
       if (!state.voiceprintConversations.length) {
         loadVoiceprintConversations().catch(showError);
       }
@@ -763,16 +763,6 @@
     }
   }
 
-  function switchTab(tabName) {
-    state.activeTab = tabName;
-    document.querySelectorAll('.tab-button').forEach((button) => {
-      button.classList.toggle('active', button.getAttribute('data-tab') === tabName);
-    });
-    document.querySelectorAll('.tab-panel').forEach((panel) => {
-      panel.classList.toggle('active', panel.id === `tab-${tabName}`);
-    });
-  }
-
   function showError(err) {
     window.alert(err.message || String(err));
   }
@@ -780,9 +770,6 @@
   function bindEvents() {
     document.querySelectorAll('.tab-button').forEach((button) => {
       button.addEventListener('click', () => switchTab(button.getAttribute('data-tab')));
-    });
-    document.querySelectorAll('.subtab-button').forEach((button) => {
-      button.addEventListener('click', () => switchSpeakerView(button.getAttribute('data-speaker-view')));
     });
 
     qs('#speaker-search').addEventListener('click', () => loadSpeakers(true).catch(showError));
@@ -856,7 +843,6 @@
 
   bindEvents();
   switchTab(state.activeTab);
-  switchSpeakerView(state.speakerView);
   Promise.all([
     loadIdentityOptions(),
     loadSpeakers(true),
