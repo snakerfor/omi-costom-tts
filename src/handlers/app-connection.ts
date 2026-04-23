@@ -7,15 +7,17 @@ import { validateConnection } from '../middleware/auth';
 import { createSonioxSession } from '../services/soniox-session';
 import { SegmentBuilder } from '../utils/segment-builder';
 import { AudioFileWriter } from '../services/audio-file-writer';
-import { AppMessage, SonioxResponse } from '../types';
+import { AppMessage, Segment, SonioxResponse } from '../types';
 import { FinalResultRecorder } from '../services/final-result-recorder';
 import { finalizeConversation } from '../services/conversation-finalizer';
 import { db } from '../db';
 import { mapSpeakersForConversation } from '../services/speaker-mapper';
 import { alignConversationSpeakers } from '../services/speaker-alignment';
 import { StreamVadGate } from '../services/stream-vad-gate';
+import { SentAudioRingBuffer } from '../services/sent-audio-ring-buffer';
 import { syncConversationSegments } from '../services/knowledge-ingest';
 import { audioUploadsDir, finalizedResultsDir, rawResultsDir } from '../runtime-paths';
+import { identifyRealtimeVoiceprintSpeakerFromPcm } from '../services/voiceprint/segment-voiceprint-service';
 
 function shouldRunSpeakerIdentityMapping(): boolean {
   return process.env.ENABLE_SPEAKER_IDENTITY_MAPPING === 'true';
@@ -71,6 +73,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   let accumulatedSilenceMs = 0;
   let idleWatchdog: NodeJS.Timeout | null = null;
   let sentTimelineCursorMs = 0;
+  let finalSegmentQueue = Promise.resolve();
   const sentToOriginalTimeline: Array<{
     sent_start_ms: number;
     sent_end_ms: number;
@@ -87,6 +90,10 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     preRollMs: Number(process.env.STREAM_VAD_PRE_ROLL_MS ?? 300),
     hangoverMs: Number(process.env.STREAM_VAD_HANGOVER_MS ?? 2200),
   });
+  const sentAudioRing = new SentAudioRingBuffer(
+    Number(process.env.XFYUN_REALTIME_RING_BUFFER_MS ?? 120000),
+  );
+  const realtimeVoiceprintTimeoutMs = Number(process.env.XFYUN_REALTIME_TIMEOUT_MS ?? 15000);
   const streamSilenceFinalizeMs = Number(process.env.STREAM_SILENCE_FINALIZE_MS ?? 0);
   const streamNoAudioFinalizeMs = Number(process.env.STREAM_NO_AUDIO_FINALIZE_MS ?? 0);
   const streamIdleFinalizeMs = Number(process.env.STREAM_IDLE_FINALIZE_MS ?? 0);
@@ -404,6 +411,73 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     }
   }
 
+  function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      return promise;
+    }
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`${label} timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
+      promise.then(
+        value => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        err => {
+          clearTimeout(timer);
+          reject(err);
+        },
+      );
+    });
+  }
+
+  async function enrichSegmentWithRealtimeVoiceprint(seg: Segment): Promise<Segment> {
+    const startMs = Math.round(seg.start * 1000);
+    const endMs = Math.round(seg.end * 1000);
+    const pcm = sentAudioRing.extractBySentRange(startMs, endMs);
+    if (!pcm) {
+      return seg;
+    }
+
+    try {
+      const match = await withTimeout(
+        identifyRealtimeVoiceprintSpeakerFromPcm(pcm.data, pcm.durationMs),
+        realtimeVoiceprintTimeoutMs,
+        'xfyun realtime voiceprint',
+      );
+      if (!match || !match.speakerId || !match.speakerName) {
+        return seg;
+      }
+
+      return {
+        ...seg,
+        speaker_label: seg.speaker,
+        speaker: match.speakerName,
+        speaker_id: match.speakerId,
+        speaker_name: match.speakerName,
+        speaker_identity: match.speakerIdentity,
+        speaker_confidence: match.score ?? undefined,
+        speaker_resolution: match.decision,
+      };
+    } catch (err) {
+      console.warn('[XFYUN] realtime voiceprint skipped:', String((err as Error)?.message ?? err));
+      return seg;
+    }
+  }
+
+  function sendFinalSegment(seg: Segment): void {
+    finalSegmentQueue = finalSegmentQueue
+      .then(async () => {
+        const enriched = await enrichSegmentWithRealtimeVoiceprint(seg);
+        console.log('[Soniox] Final:', JSON.stringify(enriched));
+        ws.send(JSON.stringify({ segments: [enriched] }));
+      })
+      .catch(err => {
+        console.warn('[Soniox] final segment send failed:', String((err as Error)?.message ?? err));
+      });
+  }
+
   function applyVadDecision(audioData: Buffer): void {
     const decision = vadGate.processChunk(audioData);
     const durationMs = chunkDurationMs(audioData);
@@ -424,6 +498,13 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       const sentStartMs = sentTimelineCursorMs;
       const sentEndMs = sentStartMs + chunk.durationMs;
       appendTimelineMapping(chunk.originalStartMs, chunk.originalEndMs, sentStartMs, sentEndMs);
+      sentAudioRing.push({
+        sentStartMs,
+        sentEndMs,
+        originalStartMs: chunk.originalStartMs,
+        originalEndMs: chunk.originalEndMs,
+        data: Buffer.from(chunk.data),
+      });
       sentTimelineCursorMs = sentEndMs;
       sendAudioToSoniox(chunk.data);
     }
@@ -482,9 +563,8 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       const seg = builder.consumeFinal(newTokens);
 
       if (seg) {
-        console.log('[Soniox] Final:', JSON.stringify(seg));
-        ws.send(JSON.stringify({ segments: [seg] }));
         committedEnd = seg.end;
+        sendFinalSegment(seg);
       }
     } else {
       // Partial: only log, don't send to APP

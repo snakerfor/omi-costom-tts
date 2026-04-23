@@ -143,6 +143,10 @@ async function readAudioBase64(audioPath: string): Promise<string> {
   return file.toString('base64');
 }
 
+function encodeAudioBase64(audio: Buffer): string {
+  return audio.toString('base64');
+}
+
 function buildCommonParameter(func: string, groupId: string, responseField: string): Record<string, unknown> {
   return {
     func,
@@ -155,14 +159,13 @@ function buildCommonParameter(func: string, groupId: string, responseField: stri
   };
 }
 
-export async function searchFea(
+async function searchFeaBase64(
   config: XfyunConfig,
-  audioPath: string,
-  topK = 2,
+  audio: string,
+  topK: number,
 ): Promise<XfyunSearchResponse> {
-  const audio = await readAudioBase64(audioPath);
   if (Buffer.byteLength(audio, 'utf8') > 4_000_000) {
-    throw new Error(`xfyun search payload exceeds 4M after base64 encoding: ${audioPath}`);
+    throw new Error('xfyun search payload exceeds 4M after base64 encoding');
   }
 
   const response = await requestXfyun<any>(config, {
@@ -196,6 +199,34 @@ export async function searchFea(
     raw: response,
     sid: typeof response?.header?.sid === 'string' ? response.header.sid : null,
   };
+}
+
+export async function searchFea(
+  config: XfyunConfig,
+  audioPath: string,
+  topK = 2,
+): Promise<XfyunSearchResponse> {
+  const audio = await readAudioBase64(audioPath);
+  try {
+    return await searchFeaBase64(config, audio, topK);
+  } catch (err) {
+    if (String((err as Error)?.message ?? err).includes('payload exceeds 4M')) {
+      throw new Error(`xfyun search payload exceeds 4M after base64 encoding: ${audioPath}`);
+    }
+    throw err;
+  }
+}
+
+export async function searchFeaAudioBuffer(
+  config: XfyunConfig,
+  audioBuffer: Buffer,
+  topK = 2,
+): Promise<XfyunSearchResponse> {
+  const audio = encodeAudioBase64(audioBuffer);
+  if (Buffer.byteLength(audio, 'utf8') > 4_000_000) {
+    throw new Error('xfyun search payload exceeds 4M after base64 encoding: audio buffer');
+  }
+  return searchFeaBase64(config, audio, topK);
 }
 
 export async function searchScoreFea(

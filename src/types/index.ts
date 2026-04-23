@@ -22,6 +22,12 @@ export interface Segment {
   start: number;
   end: number;
   speaker?: string;
+  speaker_label?: string;
+  speaker_id?: string;
+  speaker_name?: string;
+  speaker_identity?: string | null;
+  speaker_confidence?: number;
+  speaker_resolution?: string;
 }
 
 // APP message control signal

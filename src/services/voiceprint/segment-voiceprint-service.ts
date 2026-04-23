@@ -11,6 +11,7 @@ import {
   isXfyunVoiceprintEnabled,
   queryFeatureList,
   searchFea,
+  searchFeaAudioBuffer,
   updateFeature,
   XfyunScoreItem,
 } from './xfyun-client';
@@ -114,6 +115,15 @@ export interface ConversationVoiceprintOverview {
   autoHitSegments: number;
   skippedSegments: number;
   errorSegments: number;
+}
+
+export interface RealtimeVoiceprintMatchResult {
+  decision: string;
+  speakerId: string | null;
+  speakerName: string | null;
+  speakerIdentity: string | null;
+  score: number | null;
+  secondScore: number | null;
 }
 
 interface ConversationRow {
@@ -477,6 +487,76 @@ function getConversationVoiceprintStats(conversationId: string): SegmentVoicepri
 export async function listVoiceprintFeatureList(): Promise<Array<{ featureId: string; featureInfo?: string }>> {
   const config = getConfigOrThrow();
   return queryFeatureList(config);
+}
+
+export async function identifyRealtimeVoiceprintSpeakerFromPcm(
+  audioBuffer: Buffer,
+  durationMs: number,
+): Promise<RealtimeVoiceprintMatchResult | null> {
+  if (!isXfyunVoiceprintEnabled()) {
+    return null;
+  }
+  const config = getXfyunVoiceprintConfig();
+  if (!config) {
+    return null;
+  }
+
+  const minSegmentMs = Number(process.env.XFYUN_MIN_SEGMENT_MS || 1000);
+  if (durationMs < minSegmentMs || audioBuffer.length === 0) {
+    return {
+      decision: SKIPPED_SHORT_METHOD,
+      speakerId: null,
+      speakerName: null,
+      speakerIdentity: null,
+      score: null,
+      secondScore: null,
+    };
+  }
+
+  const margin = Number(process.env.XFYUN_HIT_MARGIN || 8);
+  try {
+    const response = await searchFeaAudioBuffer(config, audioBuffer, 2);
+    const scoreList = [...response.scoreList]
+      .filter(item => Number.isFinite(Number(item?.score)))
+      .sort((a, b) => normalizeScore(Number(b.score)) - normalizeScore(Number(a.score)));
+    const threshold = scoreThresholdForDuration(durationMs);
+    const { decision, top, second } = classifyDecision(scoreList, threshold, margin);
+    const topSpeaker = mapFeatureIdToSpeaker(config.groupId, top?.featureId);
+    const topScore = top ? normalizeScore(Number(top.score)) : null;
+    const secondScore = second ? normalizeScore(Number(second.score)) : null;
+
+    if (decision === AUTO_HIT_METHOD && topSpeaker) {
+      return {
+        decision: AUTO_HIT_METHOD,
+        speakerId: topSpeaker.id,
+        speakerName: topSpeaker.name,
+        speakerIdentity: topSpeaker.identity_label,
+        score: topScore,
+        secondScore,
+      };
+    }
+
+    return {
+      decision: decision === AUTO_HIT_METHOD ? NO_MATCH_METHOD : decision,
+      speakerId: null,
+      speakerName: null,
+      speakerIdentity: null,
+      score: topScore,
+      secondScore,
+    };
+  } catch (err) {
+    if (isXfyunEmptyFeatureDbError(err)) {
+      return {
+        decision: NO_MATCH_METHOD,
+        speakerId: null,
+        speakerName: null,
+        speakerIdentity: null,
+        score: null,
+        secondScore: null,
+      };
+    }
+    throw err;
+  }
 }
 
 export function getPendingSegments(conversationId: string): SegmentVoiceprintPendingResult {
