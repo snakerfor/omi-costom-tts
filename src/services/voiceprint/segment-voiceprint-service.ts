@@ -379,6 +379,11 @@ function mapFeatureIdToSpeaker(groupId: string, featureId: string | null | undef
   return speaker || null;
 }
 
+function isXfyunEmptyFeatureDbError(err: unknown): boolean {
+  const message = String((err as Error)?.message ?? err);
+  return message.includes('23008') || message.includes('does not have feature');
+}
+
 function getSegmentRows(conversationId: string, onlyUnresolved: boolean, limit: number): SegmentRow[] {
   const unresolvedClause = onlyUnresolved
     ? `AND (
@@ -642,6 +647,35 @@ export async function scanConversationVoiceprintSegments(
         }
       }
     } catch (err) {
+      if (isXfyunEmptyFeatureDbError(err)) {
+        noMatch += 1;
+        if (!dryRun) {
+          buildMatchRow({
+            conversationId,
+            segmentId: segment.id,
+            provider: 'xfyun',
+            groupId: config.groupId,
+            requestAudioPath: prep.filePath,
+            requestDurationMs: prep.durationMs,
+            decision: NO_MATCH_METHOD,
+            topFeatureId: null,
+            topSpeakerId: null,
+            topScore: null,
+            secondFeatureId: null,
+            secondSpeakerId: null,
+            secondScore: null,
+            rawResponseJson: null,
+            errorMessage: String((err as Error)?.message ?? err),
+          });
+          db.prepare(`
+            UPDATE conversation_segments
+            SET resolution_method = ?, updated_at = ?
+            WHERE id = ? AND speaker_id IS NULL
+          `).run(NO_MATCH_METHOD, new Date().toISOString(), segment.id);
+        }
+        continue;
+      }
+
       error += 1;
       if (!dryRun) {
         buildMatchRow({
