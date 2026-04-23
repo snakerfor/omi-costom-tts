@@ -383,6 +383,7 @@ function getSegmentRows(conversationId: string, onlyUnresolved: boolean, limit: 
   const unresolvedClause = onlyUnresolved
     ? `AND (
       COALESCE(cs.resolution_method, '') != '${HUMAN_EXCLUDED_METHOD}'
+      AND COALESCE(cs.resolution_method, '') != '${SKIPPED_SHORT_METHOD}'
       AND (
         cs.speaker_id IS NULL
         OR cs.resolution_method IS NULL
@@ -390,7 +391,6 @@ function getSegmentRows(conversationId: string, onlyUnresolved: boolean, limit: 
           '${LOW_CONFIDENCE_METHOD}',
           '${CONFLICT_METHOD}',
           '${NO_MATCH_METHOD}',
-          '${SKIPPED_SHORT_METHOD}',
           '${ERROR_METHOD}'
         )
       )
@@ -427,10 +427,11 @@ function getConversationVoiceprintStats(conversationId: string): SegmentVoicepri
       SUM(CASE WHEN resolution_method = ? THEN 1 ELSE 0 END) AS errorCount,
       SUM(CASE
         WHEN COALESCE(resolution_method, '') != ?
+          AND COALESCE(resolution_method, '') != ?
           AND (
             speaker_id IS NULL
             OR resolution_method IS NULL
-            OR resolution_method IN (?, ?, ?, ?, ?)
+            OR resolution_method IN (?, ?, ?, ?)
           )
         THEN 1 ELSE 0
       END) AS unresolvedCount
@@ -443,10 +444,10 @@ function getConversationVoiceprintStats(conversationId: string): SegmentVoicepri
     SKIPPED_SHORT_METHOD,
     ERROR_METHOD,
     HUMAN_EXCLUDED_METHOD,
+    SKIPPED_SHORT_METHOD,
     LOW_CONFIDENCE_METHOD,
     CONFLICT_METHOD,
     NO_MATCH_METHOD,
-    SKIPPED_SHORT_METHOD,
     ERROR_METHOD,
     conversationId,
   ) as Partial<SegmentVoiceprintStats>;
