@@ -13,6 +13,7 @@
     selectedConversationDetail: null,
     selectedConversationSpeakerFilter: null,
     selectedSegmentIds: new Set(),
+    speakerModalOpen: false,
   };
   let conversationPlaybackStopTimer = null;
 
@@ -109,6 +110,20 @@
 
   function getSelectedConversationSegments(detail = state.selectedConversationDetail) {
     return (detail?.segments || []).filter((segment) => state.selectedSegmentIds.has(segment.id));
+  }
+
+  function openSpeakerModal() {
+    if (!state.selectedSegmentIds.size) {
+      throw new Error('请先勾选至少一个片段');
+    }
+    state.speakerModalOpen = true;
+    qs('#speaker-modal').classList.remove('hidden');
+    renderSpeakerModal();
+  }
+
+  function closeSpeakerModal() {
+    state.speakerModalOpen = false;
+    qs('#speaker-modal').classList.add('hidden');
   }
 
   async function apiGet(url) {
@@ -434,13 +449,35 @@
     qs('#conversation-selected-count').textContent = String(selected.length);
     qs('#conversation-selected-duration').textContent = `${(selectedDurationMs / 1000).toFixed(1)}s`;
     qs('#conversation-selected-labels').textContent = labels.length ? labels.join(', ') : '-';
+    if (state.speakerModalOpen) {
+      renderSpeakerModal();
+    }
+  }
+
+  function renderSpeakerModal() {
+    const selected = getSelectedConversationSegments();
+    const selectedDurationMs = selected.reduce((sum, segment) => sum + Math.max(0, Number(segment.end_ms || 0) - Number(segment.start_ms || 0)), 0);
+    const labels = [...new Set(selected.map((segment) => segment.original_speaker_label || segment.speaker_label).filter(Boolean))];
+    qs('#modal-selected-count').textContent = String(selected.length);
+    qs('#modal-selected-duration').textContent = `${(selectedDurationMs / 1000).toFixed(1)}s`;
+    qs('#modal-selected-labels').textContent = labels.length ? labels.join(', ') : '-';
+    qs('#modal-selected-preview').innerHTML = selected.length
+      ? selected.slice(0, 6).map((segment) => `
+        <article class="segment-item compact-segment">
+          <div class="segment-title">
+            <span>${escapeHtml(formatDate(segment.absolute_start_time))}</span>
+            <span class="subtle">${escapeHtml(conversationDisplaySpeaker(segment))}</span>
+          </div>
+          <p>${escapeHtml(segment.text)}</p>
+        </article>
+      `).join('')
+      : '<p class="subtle">尚未选择片段。</p>';
   }
 
   function renderConversationSpeakerSummary(detail) {
     qs('#conversation-speakers').innerHTML = detail.speakers.length
       ? detail.speakers.map((speaker) => {
         const isActive = state.selectedConversationSpeakerFilter === speaker.speaker_label;
-        const unresolved = !speaker.is_confirmed;
         return `
           <article class="speaker-summary-item ${isActive ? 'active' : ''}" data-conversation-speaker-label="${escapeHtml(speaker.speaker_label || '')}">
             <div class="speaker-summary-main">
@@ -448,10 +485,8 @@
               <span class="subtle">${escapeHtml(speaker.display_name || '-')}</span>
             </div>
             <div class="speaker-summary-meta subtle">
-              <span>${escapeHtml(speaker.identity_label || '身份未确认')}</span>
               <span>片段 ${speaker.segment_count}</span>
               <span>${(speaker.total_duration_ms / 1000).toFixed(1)}s</span>
-              <span class="badge ${unresolved ? 'warning' : ''}">${unresolved ? '待确认' : '已实名'}</span>
             </div>
           </article>
         `;
@@ -474,26 +509,27 @@
     qs('#conversation-segments').innerHTML = rows.length
       ? rows.map((segment) => {
         const checked = state.selectedSegmentIds.has(segment.id) ? 'checked' : '';
-        const unresolved = !segment.speaker_id;
         const displaySpeaker = conversationDisplaySpeaker(segment);
-        const speakerBadge = segment.speaker_name || segment.speaker_label || '未标注';
+        const absoluteStart = formatDate(segment.absolute_start_time);
+        const absoluteEnd = formatDate(segment.absolute_end_time);
+        const displayState = segment.speaker_name ? '已实名' : (segment.speaker_label || '未标注');
         return `
-          <article class="transcript-row ${unresolved ? 'unresolved' : ''}" data-conversation-segment-id="${escapeHtml(segment.id)}">
+          <article class="transcript-row" data-conversation-segment-id="${escapeHtml(segment.id)}">
             <div class="transcript-time">
               <label class="voiceprint-check">
                 <input type="checkbox" data-conversation-segment-select ${checked} />
                 <span>${escapeHtml(formatSegmentSeconds(segment.start_ms))} - ${escapeHtml(formatSegmentSeconds(segment.end_ms))}</span>
               </label>
-              <button type="button" class="inline-action secondary-button" data-play-segment="${escapeHtml(segment.id)}">试听</button>
+              <div class="subtle">${escapeHtml(absoluteStart)}</div>
+              <div class="subtle">${escapeHtml(absoluteEnd)}</div>
             </div>
             <div class="transcript-text">
               <div class="transcript-display-name subtle">${escapeHtml(displaySpeaker)}</div>
               <div>${highlightText(segment.text, keyword)}</div>
             </div>
             <div class="transcript-actions">
-              <span class="badge ${unresolved ? 'warning' : ''}">${escapeHtml(speakerBadge)}</span>
-              <span class="badge ${segment.speaker_identity ? '' : 'danger'}">${escapeHtml(segment.speaker_identity || '身份未确认')}</span>
-              ${segment.resolution_method ? `<span class="badge ${voiceprintDecisionClass(segment.resolution_method)}">${escapeHtml(voiceprintDecisionLabel(segment.resolution_method))}</span>` : ''}
+              <span class="badge">${escapeHtml(displayState)}</span>
+              <button type="button" class="inline-action compact-action secondary-button" data-play-segment="${escapeHtml(segment.id)}">试听</button>
               ${segment.speaker_id ? `<button class="inline-action secondary-button" data-go-speaker="${escapeHtml(segment.speaker_id)}">去确认</button>` : ''}
             </div>
           </article>
@@ -634,7 +670,7 @@
     renderConversationDetail(result.data);
   }
 
-  async function enrollSelectedConversationSegments(mode) {
+  async function enrollSelectedConversationSegments() {
     if (!state.selectedConversationId) {
       throw new Error('请先选择会话');
     }
@@ -643,59 +679,61 @@
       throw new Error('请先勾选至少一个片段');
     }
 
+    const speakerMode = qs('#conversation-speaker-mode').value;
     const body = {
       conversationId: state.selectedConversationId,
-      segmentIds: mode === 'exclude' ? [] : selectedIds,
-      speakerMode: qs('#conversation-speaker-mode').value === 'existing' ? 'existing' : 'new',
-      speakerId: qs('#conversation-existing-speaker').value || null,
-      speakerName: qs('#conversation-new-speaker-name').value.trim() || null,
-      identityLabel: qs('#conversation-new-identity').value || null,
-      excludedSegmentIds: mode === 'exclude' ? selectedIds : [],
+      segmentIds: selectedIds,
+      speakerMode: speakerMode,
+      speakerId: speakerMode === 'existing' ? qs('#conversation-existing-speaker').value : null,
+      speakerName: speakerMode === 'new' ? qs('#conversation-new-speaker-name').value.trim() : null,
+      identityLabel: speakerMode === 'new' ? qs('#conversation-new-identity').value : null,
+      excludedSegmentIds: [],
     };
 
-    if (mode === 'existing' && !body.speakerId) {
+    if (speakerMode === 'existing' && !body.speakerId) {
       throw new Error('请选择已有发言人');
     }
-    if (mode === 'new' && !body.speakerName) {
+    if (speakerMode === 'new' && !body.speakerName) {
       throw new Error('请输入新发言人姓名');
     }
 
-    const result = await apiSend('/api/admin/voiceprint/xfyun/enroll-from-segments', 'POST', body);
+    // Disable buttons during request
+    qs('#conversation-enroll-existing').disabled = true;
+    qs('#conversation-enroll-new').disabled = true;
+
+    let result;
+    try {
+      result = await apiSend('/api/admin/voiceprint/xfyun/enroll-from-segments', 'POST', body);
+    } finally {
+      qs('#conversation-enroll-existing').disabled = false;
+      qs('#conversation-enroll-new').disabled = false;
+    }
+
     state.selectedSegmentIds.clear();
+    closeSpeakerModal();
     await loadConversationDetail(state.selectedConversationId);
     await loadConversations(false);
     await loadSpeakers(false);
     await loadConfirmedSpeakerOptions();
-    if (result.data.action === 'exclude_segments') {
-      window.alert(`已排除 ${result.data.excludedSegmentCount} 条片段。`);
-      return;
-    }
     window.alert(`操作完成：${result.data.createdNewSpeaker ? '新建' : '更新'} speaker ${result.data.speakerId}，处理 ${result.data.processedSegmentCount} 条，排除 ${result.data.excludedSegmentCount} 条。`);
-  }
-
-  async function scanSelectedConversation() {
-    if (!state.selectedConversationId) {
-      throw new Error('请先选择会话');
-    }
-    const result = await apiSend(`/api/admin/conversations/${encodeURIComponent(state.selectedConversationId)}/voiceprint/xfyun/scan`, 'POST', {
-      onlyUnresolved: true,
-      limit: 1000,
-      dryRun: false,
-    });
-    await loadConversationDetail(state.selectedConversationId);
-    await loadConversations(false);
-    window.alert(`扫描完成：自动命中 ${result.data.hit}，低置信 ${result.data.lowConfidence}，冲突 ${result.data.conflict}，未命中 ${result.data.noMatch}，跳过 ${result.data.skipped}，错误 ${result.data.error}`);
   }
 
   async function backfillSelectedConversation() {
     if (!state.selectedConversationId) {
       throw new Error('请先选择会话');
     }
-    const result = await apiSend(`/api/admin/conversations/${encodeURIComponent(state.selectedConversationId)}/voiceprint/xfyun/backfill`, 'POST', {
-      onlyUnresolved: true,
-      limit: 1000,
-      dryRun: false,
-    });
+    const button = qs('#conversation-backfill');
+    button.disabled = true;
+    let result;
+    try {
+      result = await apiSend(`/api/admin/conversations/${encodeURIComponent(state.selectedConversationId)}/voiceprint/xfyun/backfill`, 'POST', {
+        onlyUnresolved: true,
+        limit: 1000,
+        dryRun: false,
+      });
+    } finally {
+      button.disabled = false;
+    }
     await loadConversationDetail(state.selectedConversationId);
     await loadConversations(false);
     window.alert(`重刷完成：自动命中 ${result.data.hit}，低置信 ${result.data.lowConfidence}，冲突 ${result.data.conflict}，未命中 ${result.data.noMatch}，跳过 ${result.data.skipped}，错误 ${result.data.error}`);
@@ -777,14 +815,22 @@
         renderConversationTranscript(state.selectedConversationDetail);
       }
     });
+    qs('#conversation-open-modal').addEventListener('click', () => openSpeakerModal());
+    qs('#speaker-modal-close').addEventListener('click', () => closeSpeakerModal());
+    qs('#speaker-modal').addEventListener('click', (event) => {
+      if (event.target === qs('#speaker-modal')) {
+        closeSpeakerModal();
+      }
+    });
     qs('#conversation-speaker-mode').addEventListener('change', updateConversationSpeakerModeVisibility);
-    qs('#conversation-enroll-existing').addEventListener('click', () => enrollSelectedConversationSegments('existing').catch(showError));
-    qs('#conversation-enroll-new').addEventListener('click', () => enrollSelectedConversationSegments('new').catch(showError));
-    qs('#conversation-exclude').addEventListener('click', () => enrollSelectedConversationSegments('exclude').catch(showError));
-    qs('#conversation-scan').addEventListener('click', () => scanSelectedConversation().catch(showError));
+    qs('#conversation-enroll-existing').addEventListener('click', () => enrollSelectedConversationSegments().catch(showError));
+    qs('#conversation-enroll-new').addEventListener('click', () => enrollSelectedConversationSegments().catch(showError));
     qs('#conversation-backfill').addEventListener('click', () => backfillSelectedConversation().catch(showError));
     qs('#conversation-clear-selection').addEventListener('click', () => {
       state.selectedSegmentIds.clear();
+      if (state.speakerModalOpen) {
+        renderSpeakerModal();
+      }
       updateConversationSelectionSummary(state.selectedConversationDetail);
       if (state.selectedConversationDetail) {
         renderConversationTranscript(state.selectedConversationDetail);
