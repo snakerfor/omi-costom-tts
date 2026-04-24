@@ -88,6 +88,7 @@
                   <div><span class="meta-label">发言人</span><span id="conversation-speaker-count"></span></div>
                   <div><span class="meta-label">片段数</span><span id="conversation-segment-count"></span></div>
                 </div>
+                <div id="conversation-error-banner" class="detail-alert detail-alert-danger hidden"></div>
 
                 <div class="detail-section">
                   <div class="conversation-workbench-header">
@@ -125,7 +126,7 @@
 
                 <div class="detail-section">
                   <h3>Transcript</h3>
-                  <p class="subtle transcript-help">每条都可试听。显示绝对开始/结束时间；已识别显示实名，未识别显示 Soniox 标签。</p>
+                  <p class="subtle transcript-help">每条都可试听。日期只显示一次；状态按当前识别结果展示，已匹配到发言人的片段只显示“已实名”。</p>
                   <div id="conversation-segments" class="segment-list transcript-list"></div>
                 </div>
               </div>

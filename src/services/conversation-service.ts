@@ -18,6 +18,7 @@ export interface ConversationListRow {
   session_id: string;
   uid: string | null;
   status: string;
+  error_message: string | null;
   started_at: string | null;
   ended_at: string | null;
   audio_file_path: string | null;
@@ -57,6 +58,7 @@ export interface ConversationSegmentRow {
   text: string;
   confidence: number | null;
   resolution_method: string | null;
+  speaker_confirmed: number;
 }
 
 export interface ConversationDetail {
@@ -190,6 +192,7 @@ export function listConversations(filters: ConversationListFilters): PaginatedRe
       c.session_id,
       c.uid,
       c.status,
+      c.error_message,
       COALESCE(c.first_audio_frame_at, c.created_at) AS started_at,
       c.ended_at,
       c.audio_file_path,
@@ -213,7 +216,7 @@ export function listConversations(filters: ConversationListFilters): PaginatedRe
     LEFT JOIN conversation_segments cs ON cs.conversation_id = c.id
     LEFT JOIN speakers s ON s.id = cs.speaker_id
     ${whereClause}
-    GROUP BY c.id, c.session_id, c.uid, c.status, c.first_audio_frame_at, c.ended_at, c.audio_file_path, c.raw_result_path, c.created_at, c.updated_at
+    GROUP BY c.id, c.session_id, c.uid, c.status, c.error_message, c.first_audio_frame_at, c.ended_at, c.audio_file_path, c.raw_result_path, c.created_at, c.updated_at
     ORDER BY COALESCE(c.first_audio_frame_at, c.created_at) DESC
     LIMIT ? OFFSET ?
   `).all(...params, pageSize, offset).map((row: any) => ({
@@ -234,6 +237,7 @@ export function getConversationDetail(conversationId: string): ConversationDetai
       c.session_id,
       c.uid,
       c.status,
+      c.error_message,
       COALESCE(c.first_audio_frame_at, c.created_at) AS started_at,
       c.ended_at,
       c.audio_file_path,
@@ -257,7 +261,7 @@ export function getConversationDetail(conversationId: string): ConversationDetai
     LEFT JOIN conversation_segments cs ON cs.conversation_id = c.id
     LEFT JOIN speakers s ON s.id = cs.speaker_id
     WHERE c.id = ?
-    GROUP BY c.id, c.session_id, c.uid, c.status, c.first_audio_frame_at, c.ended_at, c.audio_file_path, c.raw_result_path, c.created_at, c.updated_at
+    GROUP BY c.id, c.session_id, c.uid, c.status, c.error_message, c.first_audio_frame_at, c.ended_at, c.audio_file_path, c.raw_result_path, c.created_at, c.updated_at
   `).get(conversationId) as ConversationListRow | undefined;
 
   if (!conversation) {
@@ -310,7 +314,11 @@ export function getConversationDetail(conversationId: string): ConversationDetai
       COALESCE(s.name, s.display_label, cs.speaker_name, cs.speaker_label, '未知发言人') AS display_name,
       cs.text,
       cs.confidence,
-      cs.resolution_method
+      cs.resolution_method,
+      CASE
+        WHEN s.id IS NOT NULL AND s.name IS NOT NULL AND TRIM(s.name) != '' THEN 1
+        ELSE 0
+      END AS speaker_confirmed
     FROM conversation_segments cs
     LEFT JOIN speakers s ON s.id = cs.speaker_id
     WHERE cs.conversation_id = ?

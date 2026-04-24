@@ -697,11 +697,9 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       activeConnectionsByUid.delete(clientUid);
     }
     stopAcceptingAudio();
-    try {
-      sonioxSession?.close();
-    } catch {
-      // Ignore
-    }
+    void Promise.resolve(sonioxSession?.close()).catch(err => {
+      console.warn('[Soniox] close skipped during websocket shutdown:', String((err as Error)?.message ?? err));
+    });
     clearIdleWatchdog();
     void finalizeOnce('ws_close');
   });

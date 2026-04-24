@@ -16,6 +16,8 @@
     speakerModalOpen: false,
   };
   let conversationPlaybackStopTimer = null;
+  const conversationPlaybackStartOffsetMs = 180;
+  const conversationPlaybackEndPaddingMs = 120;
 
   function qs(selector) {
     return document.querySelector(selector);
@@ -26,6 +28,55 @@
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
     return date.toLocaleString('zh-CN', { hour12: false });
+  }
+
+  function formatDateOnly(value) {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleDateString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+  }
+
+  function formatTimeOnly(value) {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleTimeString('zh-CN', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  }
+
+  function formatAbsoluteTimeMeta(startValue, endValue) {
+    if (!startValue && !endValue) {
+      return { dateLabel: '-', rangeLabel: '-' };
+    }
+    if (!startValue || !endValue) {
+      const value = startValue || endValue;
+      return {
+        dateLabel: formatDateOnly(value),
+        rangeLabel: formatTimeOnly(value),
+      };
+    }
+    const startDate = new Date(startValue);
+    const endDate = new Date(endValue);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      return {
+        dateLabel: formatDateOnly(startValue),
+        rangeLabel: `${formatTimeOnly(startValue)} - ${formatTimeOnly(endValue)}`,
+      };
+    }
+    const sameDay = startDate.toDateString() === endDate.toDateString();
+    return {
+      dateLabel: sameDay ? formatDateOnly(startValue) : `${formatDateOnly(startValue)} - ${formatDateOnly(endValue)}`,
+      rangeLabel: `${formatTimeOnly(startValue)} - ${formatTimeOnly(endValue)}`,
+    };
   }
 
   function formatSegmentSeconds(value) {
@@ -80,6 +131,57 @@
     if (value === 'xfyun_error') return 'danger';
     if (value === 'xfyun_low_confidence' || value === 'xfyun_conflict') return 'warning';
     return '';
+  }
+
+  function formatConversationError(value) {
+    const message = String(value || '').trim();
+    if (!message) return '';
+    const labels = {
+      recovered_after_server_restart: '服务重启后恢复未完成会话',
+      superseded_by_new_connection: '同一设备发起了新连接，旧会话被覆盖',
+    };
+    return labels[message] || message;
+  }
+
+  function conversationStatusMeta(item) {
+    const status = String(item?.status || '');
+    if (status === 'failed') {
+      return { label: '失败', className: 'danger' };
+    }
+    if (status === 'recording') {
+      return { label: '录音中', className: 'warning' };
+    }
+    if (status === 'completed') {
+      return { label: '已完成', className: '' };
+    }
+    return { label: status || '-', className: '' };
+  }
+
+  function segmentStatusMeta(segment) {
+    const method = segment?.resolution_method || '';
+    if (method === 'human_segment_excluded') {
+      return { label: '已排除', className: 'danger' };
+    }
+    if (segment?.speaker_id || segment?.speaker_name) {
+      return { label: '已实名', className: '' };
+    }
+    const labels = {
+      xfyun_low_confidence: { label: '低置信', className: 'warning' },
+      xfyun_conflict: { label: '冲突', className: 'warning' },
+      xfyun_no_match: { label: '未命中', className: 'warning' },
+      xfyun_error: { label: '识别错误', className: 'danger' },
+      xfyun_skipped_short: { label: '片段过短', className: 'warning' },
+      soniox_finalized: { label: '待确认', className: 'warning' },
+      candidate_pending: { label: '待确认', className: 'warning' },
+      deferred_unresolved: { label: '待确认', className: 'warning' },
+      label_fallback: { label: '待确认', className: 'warning' },
+      neighbor_bridge: { label: '待确认', className: 'warning' },
+      pending: { label: '待扫描', className: 'warning' },
+    };
+    return labels[method] || {
+      label: segment?.speaker_label || '待确认',
+      className: method ? voiceprintDecisionClass(method) : 'warning',
+    };
   }
 
   function speakerDisplayName(item) {
@@ -378,20 +480,25 @@
     const listEl = qs('#conversation-list');
     renderConversationPagination();
     listEl.innerHTML = state.conversations.length
-      ? state.conversations.map((item) => `
-        <article class="list-item ${item.id === state.selectedConversationId ? 'active' : ''}" data-conversation-id="${item.id}">
-          <div class="list-item-title">
-            <span>${escapeHtml(formatDate(item.started_at))}</span>
-            <span class="subtle">${escapeHtml(item.status)}</span>
-          </div>
-          <div class="badge-row">
-            <span class="badge">发言人 ${item.speaker_count}</span>
-            <span class="badge ${item.unconfirmed_speaker_count ? 'warning' : ''}">待确认 ${item.unconfirmed_speaker_count}</span>
-            <span class="badge">片段 ${item.segment_count}</span>
-          </div>
-          <p>${highlightText(item.summary_text || '暂无摘要', keyword)}</p>
-        </article>
-      `).join('')
+      ? state.conversations.map((item) => {
+        const statusMeta = conversationStatusMeta(item);
+        const errorText = item.status === 'failed' ? formatConversationError(item.error_message) : '';
+        return `
+          <article class="list-item ${item.id === state.selectedConversationId ? 'active' : ''}" data-conversation-id="${item.id}">
+            <div class="list-item-title">
+              <span>${escapeHtml(formatDate(item.started_at))}</span>
+              <span class="badge ${statusMeta.className}">${escapeHtml(statusMeta.label)}</span>
+            </div>
+            <div class="badge-row">
+              <span class="badge">发言人 ${item.speaker_count}</span>
+              <span class="badge ${item.unconfirmed_speaker_count ? 'warning' : ''}">待确认 ${item.unconfirmed_speaker_count}</span>
+              <span class="badge">片段 ${item.segment_count}</span>
+            </div>
+            ${errorText ? `<p class="subtle danger-text">失败原因：${escapeHtml(errorText)}</p>` : ''}
+            <p>${highlightText(item.summary_text || '暂无摘要', keyword)}</p>
+          </article>
+        `;
+      }).join('')
       : '<p class="subtle">没有匹配的会话。</p>';
 
     listEl.querySelectorAll('[data-conversation-id]').forEach((node) => {
@@ -417,8 +524,13 @@
       throw new Error('当前会话没有可播放音频');
     }
 
-    const startSec = Math.max(0, Number(segment.start_ms || 0) / 1000);
-    const endSec = Math.max(startSec, Number(segment.end_ms || 0) / 1000);
+    const rawStartMs = Math.max(0, Number(segment.start_ms || 0));
+    const rawEndMs = Math.max(rawStartMs, Number(segment.end_ms || 0));
+    const startSec = Math.max(0, (rawStartMs + conversationPlaybackStartOffsetMs) / 1000);
+    const endSec = Math.max(
+      startSec,
+      (rawEndMs + conversationPlaybackStartOffsetMs + conversationPlaybackEndPaddingMs) / 1000,
+    );
     const startPlayback = () => {
       player.currentTime = startSec;
       void player.play().catch(showError);
@@ -517,27 +629,29 @@
       ? rows.map((segment) => {
         const checked = state.selectedSegmentIds.has(segment.id) ? 'checked' : '';
         const displaySpeaker = conversationDisplaySpeaker(segment);
-        const absoluteStart = formatDate(segment.absolute_start_time);
-        const absoluteEnd = formatDate(segment.absolute_end_time);
-        const displayState = segment.speaker_name ? '已实名' : (segment.speaker_label || '未标注');
+        const timeMeta = formatAbsoluteTimeMeta(segment.absolute_start_time, segment.absolute_end_time);
+        const statusMeta = segmentStatusMeta(segment);
+        const speakerAction = segment.speaker_id
+          ? `<button class="inline-action compact-action secondary-button" data-go-speaker="${escapeHtml(segment.speaker_id)}">查看发言人</button>`
+          : '';
         return `
           <article class="transcript-row" data-conversation-segment-id="${escapeHtml(segment.id)}">
             <div class="transcript-time">
               <label class="voiceprint-check">
                 <input type="checkbox" data-conversation-segment-select ${checked} />
-                <span>${escapeHtml(formatSegmentSeconds(segment.start_ms))} - ${escapeHtml(formatSegmentSeconds(segment.end_ms))}</span>
+                <span class="transcript-relative-range">${escapeHtml(formatSegmentSeconds(segment.start_ms))} - ${escapeHtml(formatSegmentSeconds(segment.end_ms))}</span>
               </label>
-              <div class="subtle">${escapeHtml(absoluteStart)}</div>
-              <div class="subtle">${escapeHtml(absoluteEnd)}</div>
+              <div class="transcript-date">${escapeHtml(timeMeta.dateLabel)}</div>
+              <div class="subtle transcript-absolute-range">${escapeHtml(timeMeta.rangeLabel)}</div>
             </div>
             <div class="transcript-text">
               <div class="transcript-display-name subtle">${escapeHtml(displaySpeaker)}</div>
-              <div>${highlightText(segment.text, keyword)}</div>
+              <div class="transcript-text-content">${highlightText(segment.text, keyword)}</div>
             </div>
             <div class="transcript-actions">
-              <span class="badge">${escapeHtml(displayState)}</span>
+              <span class="badge ${statusMeta.className}">${escapeHtml(statusMeta.label)}</span>
               <button type="button" class="inline-action compact-action secondary-button" data-play-segment="${escapeHtml(segment.id)}">试听</button>
-              ${segment.speaker_id ? `<button class="inline-action secondary-button" data-go-speaker="${escapeHtml(segment.speaker_id)}">去确认</button>` : ''}
+              ${speakerAction}
             </div>
           </article>
         `;
@@ -580,6 +694,11 @@
   function resetConversationDetail() {
     qs('#conversation-empty').classList.remove('hidden');
     qs('#conversation-detail').classList.add('hidden');
+    const errorBanner = qs('#conversation-error-banner');
+    if (errorBanner) {
+      errorBanner.classList.add('hidden');
+      errorBanner.textContent = '';
+    }
     const player = qs('#conversation-audio-player');
     clearConversationPlaybackTimer();
     player.pause();
@@ -642,11 +761,17 @@
     qs('#conversation-detail').classList.remove('hidden');
     qs('#conversation-title').textContent = detail.conversation.id;
     qs('#conversation-session-id').textContent = detail.conversation.session_id;
-    qs('#conversation-status').textContent = detail.conversation.status;
+    qs('#conversation-status').textContent = conversationStatusMeta(detail.conversation).label;
     qs('#conversation-started-at').textContent = formatDate(detail.conversation.started_at);
     qs('#conversation-ended-at').textContent = formatDate(detail.conversation.ended_at);
     qs('#conversation-speaker-count').textContent = detail.conversation.speaker_count;
     qs('#conversation-segment-count').textContent = detail.conversation.segment_count;
+    const errorBanner = qs('#conversation-error-banner');
+    const errorText = detail.conversation.status === 'failed' ? formatConversationError(detail.conversation.error_message) : '';
+    if (errorBanner) {
+      errorBanner.textContent = errorText ? `失败原因：${errorText}` : '';
+      errorBanner.classList.toggle('hidden', !errorText);
+    }
 
     const audioLink = qs('#conversation-audio-link');
     const audioPlayer = qs('#conversation-audio-player');
@@ -737,7 +862,7 @@
       console.log('[DEBUG] backfill url:', url);
       result = await apiSend(url, 'POST', {
         onlyUnresolved: true,
-        limit: 1000,
+        limit: 80,
         dryRun: false,
       });
       console.log('[DEBUG] backfill result:', result);
@@ -749,7 +874,7 @@
     }
     await loadConversationDetail(state.selectedConversationId);
     await loadConversations(false);
-    window.alert(`重刷完成：自动命中 ${result.data.hit}，低置信 ${result.data.lowConfidence}，冲突 ${result.data.conflict}，未命中 ${result.data.noMatch}，跳过 ${result.data.skipped}，错误 ${result.data.error}`);
+    window.alert(`本批重刷完成：自动命中 ${result.data.hit}，低置信 ${result.data.lowConfidence}，冲突 ${result.data.conflict}，未命中 ${result.data.noMatch}，跳过 ${result.data.skipped}，错误 ${result.data.error}`);
   }
 
   async function saveMemoryConfig() {

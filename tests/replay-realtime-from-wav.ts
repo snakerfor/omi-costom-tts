@@ -1,5 +1,6 @@
 import WebSocket from 'ws';
 import { spawn } from 'child_process';
+import { createHash } from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -95,10 +96,12 @@ async function main(): Promise<void> {
   const url = new URL(options.serverUrl);
   url.searchParams.set('api_key', options.apiToken);
   url.searchParams.set('language', options.language);
+  const expectedUid = `token_${createHash('sha1').update(options.apiToken).digest('hex').slice(0, 16)}`;
 
   console.log(`[Replay] input=${inputPath}`);
   console.log(`[Replay] server=${url.toString()}`);
   console.log(`[Replay] chunkMs=${options.chunkMs} speed=${options.speed} settleMs=${options.settleMs}`);
+  console.log(`[Replay] expectedUid=${expectedUid}`);
 
   const pcm = await decodeToPcmBuffer(inputPath);
   const bytesPerMs = 16000 * 2 / 1000;
@@ -184,6 +187,7 @@ async function main(): Promise<void> {
         {
           inputPath,
           startedAt,
+          expectedUid,
           serverUrl: url.toString(),
           chunkMs: options.chunkMs,
           speed: options.speed,
@@ -202,6 +206,7 @@ async function main(): Promise<void> {
       {
         inputPath,
         startedAt,
+        expectedUid,
         audioDurationMs,
         receivedMessageCount: received.length,
       },
