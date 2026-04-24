@@ -141,9 +141,16 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    const data = await response.json();
+    let data;
+    try {
+      data = await response.json();
+    } catch (err) {
+      const text = await response.text().catch(() => 'unknown');
+      console.error('[DEBUG] apiSend JSON parse error:', err, 'response text:', text);
+      throw new Error(`响应解析失败: ${text.slice(0, 200)}`);
+    }
     if (!response.ok || !data.ok) {
-      throw new Error(data.error || 'Request failed');
+      throw new Error(data.error || `请求失败 (${response.status})`);
     }
     return data;
   }
@@ -726,11 +733,17 @@
     button.disabled = true;
     let result;
     try {
-      result = await apiSend(`/api/admin/conversations/${encodeURIComponent(state.selectedConversationId)}/voiceprint/xfyun/backfill`, 'POST', {
+      const url = `/api/admin/conversations/${encodeURIComponent(state.selectedConversationId)}/voiceprint/xfyun/backfill`;
+      console.log('[DEBUG] backfill url:', url);
+      result = await apiSend(url, 'POST', {
         onlyUnresolved: true,
         limit: 1000,
         dryRun: false,
       });
+      console.log('[DEBUG] backfill result:', result);
+    } catch (err) {
+      console.error('[DEBUG] backfill error:', err);
+      throw err;
     } finally {
       button.disabled = false;
     }
@@ -825,7 +838,15 @@
     qs('#conversation-speaker-mode').addEventListener('change', updateConversationSpeakerModeVisibility);
     qs('#conversation-enroll-existing').addEventListener('click', () => enrollSelectedConversationSegments().catch(showError));
     qs('#conversation-enroll-new').addEventListener('click', () => enrollSelectedConversationSegments().catch(showError));
-    qs('#conversation-backfill').addEventListener('click', () => backfillSelectedConversation().catch(showError));
+    qs('#conversation-backfill').addEventListener('click', () => {
+      console.log('[DEBUG] backfill button clicked, selectedConversationId:', state.selectedConversationId);
+      backfillSelectedConversation()
+        .then(() => console.log('[DEBUG] backfill completed successfully'))
+        .catch((err) => {
+          console.error('[DEBUG] backfill failed with error:', err);
+          showError(err);
+        });
+    });
     qs('#conversation-clear-selection').addEventListener('click', () => {
       state.selectedSegmentIds.clear();
       if (state.speakerModalOpen) {
