@@ -359,6 +359,13 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, urlOb
             ...segment,
             audioUrl: toMediaUrl(segment.audioUrl),
           })),
+          groups: (result.groups || []).map(group => ({
+            ...group,
+            segments: (group.segments || []).map(segment => ({
+              ...segment,
+              audioUrl: toMediaUrl(segment.audioUrl),
+            })),
+          })),
         },
       });
     } catch (err) {
