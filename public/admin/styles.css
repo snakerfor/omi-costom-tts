@@ -397,6 +397,12 @@ button,
   border: 1px solid var(--border);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+}
+
+.speaker-summary-item.active {
+  border-color: rgba(15, 139, 109, 0.4);
+  box-shadow: 0 14px 30px rgba(15, 139, 109, 0.12);
 }
 
 .speaker-summary-main,
@@ -537,63 +543,6 @@ button,
   line-height: 1.6;
 }
 
-.voiceprint-toolbar {
-  grid-template-columns: minmax(280px, 1.6fr) minmax(140px, 0.8fr) repeat(2, minmax(0, 1fr));
-}
-
-.voiceprint-stats {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.voiceprint-list {
-  max-height: calc(100vh - 340px);
-}
-
-.voiceprint-group {
-  display: grid;
-  gap: 12px;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.9);
-}
-
-.voiceprint-group + .voiceprint-group {
-  margin-top: 14px;
-}
-
-.voiceprint-group-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.voiceprint-group-list {
-  display: grid;
-  gap: 12px;
-}
-
-.voiceprint-segment {
-  display: grid;
-  gap: 10px;
-}
-
-.voiceprint-segment.active {
-  border-color: rgba(15, 139, 109, 0.35);
-  box-shadow: 0 14px 30px rgba(15, 139, 109, 0.12);
-}
-
-.voiceprint-segment-top {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 12px;
-  align-items: start;
-}
-
 .voiceprint-check {
   display: inline-flex;
   align-items: center;
@@ -606,28 +555,10 @@ button,
   margin: 0;
 }
 
-.voiceprint-form {
-  align-items: start;
-}
-
-.voiceprint-meta {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.voiceprint-segment audio {
-  width: 100%;
-  margin-top: 2px;
-}
-
 @media (max-width: 1180px) {
   .memory-stats,
   .memory-actions,
-  .toolbar,
-  .voiceprint-toolbar {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .voiceprint-stats {
+  .toolbar {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
@@ -647,22 +578,14 @@ button,
 
   .memory-stats,
   .memory-actions,
-  .toolbar,
-  .voiceprint-toolbar,
-  .voiceprint-stats,
-  .voiceprint-meta {
+  .toolbar {
     grid-template-columns: 1fr;
   }
 
   .meta-grid,
   .form-grid,
-  .transcript-row,
-  .voiceprint-segment-top {
+  .transcript-row {
     grid-template-columns: 1fr;
-  }
-
-  .voiceprint-group-header {
-    flex-direction: column;
   }
 
   .conversation-workbench-header {

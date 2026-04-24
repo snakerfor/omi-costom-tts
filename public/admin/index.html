@@ -18,243 +18,16 @@
         </div>
       </header>
 
-      <section class="memory-panel">
-        <div class="memory-panel-header">
-          <div>
-            <p class="eyebrow">Knowledge Memory</p>
-            <h2>记忆同步与补充</h2>
-          </div>
-          <div id="memory-job-badge" class="badge-row"></div>
-        </div>
-        <div class="memory-stats">
-          <div class="memory-stat-card"><span class="meta-label">OMI Memories</span><strong id="memory-omi-count">0</strong></div>
-          <div class="memory-stat-card"><span class="meta-label">Knowledge Memories</span><strong id="memory-knowledge-count">0</strong></div>
-          <div class="memory-stat-card"><span class="meta-label">待处理 Candidates</span><strong id="memory-candidate-count">0</strong></div>
-        </div>
-        <div class="memory-actions">
-          <label class="toggle-field">
-            <input id="memory-ai-enabled" type="checkbox" />
-            <span>启用 AI 补充入口（默认关闭）</span>
-          </label>
-          <input id="memory-api-key" type="password" placeholder="临时 MiniMax API Key（可选，不保存）" />
-          <button id="memory-sync-omi" type="button" class="secondary-button">同步 OMI Memories 到 Knowledge</button>
-          <button id="memory-run-ai" type="button">执行 AI 补充</button>
-        </div>
-        <div class="memory-meta">
-          <p id="memory-ai-availability" class="subtle">AI 环境检查中...</p>
-          <p id="memory-last-omi-import" class="subtle">最近 OMI 导入：-</p>
-          <p id="memory-last-ai-supplement" class="subtle">最近 AI 补充：-</p>
-        </div>
-      </section>
-
       <nav class="tabs">
-        <button class="tab-button active" data-tab="directory">正式发言人</button>
-        <button class="tab-button" data-tab="conversations">对话记录</button>
+        <button class="tab-button active" data-tab="conversations">对话记录</button>
+        <button class="tab-button" data-tab="directory">正式发言人</button>
+        <button class="tab-button" data-tab="systems">系统工具</button>
       </nav>
 
       <main>
-        <section class="tab-panel active" id="tab-directory">
-            <div class="toolbar">
-              <input id="speaker-q" type="search" placeholder="搜索姓名、标签、身份、样本文本" />
-              <select id="speaker-confirmation">
-                <option value="unconfirmed_any">全部未确认</option>
-                <option value="unconfirmed_name">未确认姓名</option>
-                <option value="unconfirmed_identity">未确认身份</option>
-                <option value="all">全部</option>
-                <option value="confirmed">已确认</option>
-              </select>
-              <input id="speaker-start" type="datetime-local" />
-              <input id="speaker-end" type="datetime-local" />
-              <select id="speaker-page-size">
-                <option value="10">每页 10 条</option>
-                <option value="20" selected>每页 20 条</option>
-                <option value="50">每页 50 条</option>
-              </select>
-              <button id="speaker-search">查询</button>
-            </div>
-
-            <div class="two-column">
-              <section class="card list-card">
-                <div class="card-header">
-                  <h2>发言人列表</h2>
-                  <span id="speaker-list-count" class="subtle"></span>
-                </div>
-                <div id="speaker-list" class="list"></div>
-                <div class="pagination">
-                  <button id="speaker-prev-page" type="button" class="secondary-button">上一页</button>
-                  <span id="speaker-pagination" class="subtle">第 1 / 1 页</span>
-                  <button id="speaker-next-page" type="button" class="secondary-button">下一页</button>
-                </div>
-              </section>
-
-              <section class="card detail-card">
-                <div id="speaker-empty" class="empty-state">选择一个发言人后查看详情和确认信息。</div>
-                <div id="speaker-detail" class="detail hidden">
-                  <div class="detail-header">
-                    <div>
-                      <p class="eyebrow">发言人详情</p>
-                      <h2 id="speaker-detail-title">-</h2>
-                    </div>
-                    <div id="speaker-detail-badges" class="badge-row"></div>
-                  </div>
-
-                  <div class="meta-grid">
-                    <div><span class="meta-label">ID</span><span id="speaker-id"></span></div>
-                    <div><span class="meta-label">首次出现</span><span id="speaker-first-seen"></span></div>
-                    <div><span class="meta-label">最近出现</span><span id="speaker-last-seen"></span></div>
-                    <div><span class="meta-label">会话数</span><span id="speaker-conv-count"></span></div>
-                    <div><span class="meta-label">片段数</span><span id="speaker-seg-count"></span></div>
-                  </div>
-
-                  <div class="detail-section">
-                    <h3>样本音频</h3>
-                    <audio id="speaker-audio" controls class="hidden"></audio>
-                    <p id="speaker-audio-empty" class="subtle">暂无可播放样本。</p>
-                  </div>
-
-                  <div class="detail-section">
-                    <h3>代表性片段</h3>
-                    <div id="speaker-representative-segments" class="segment-list"></div>
-                  </div>
-
-                  <div class="detail-section">
-                    <h3>最近会话</h3>
-                    <div id="speaker-recent-conversations" class="segment-list"></div>
-                  </div>
-
-                  <form id="speaker-form" class="detail-section form-grid">
-                    <h3>确认信息</h3>
-                    <label>
-                      <span>姓名</span>
-                      <input id="speaker-form-name" type="text" placeholder="例如：张三" />
-                    </label>
-                    <label>
-                      <span>身份</span>
-                      <select id="speaker-form-identity">
-                        <option value="">未确认</option>
-                      </select>
-                    </label>
-                    <label class="full-width">
-                      <span>备注</span>
-                      <textarea id="speaker-form-notes" rows="4" placeholder="补充说明"></textarea>
-                    </label>
-                    <div class="actions full-width">
-                      <button type="submit">保存确认</button>
-                    </div>
-                  </form>
-                </div>
-              </section>
-            </div>
-        </section>
-
-        <section class="tab-panel" id="tab-voiceprint">
-            <div class="info-panel voiceprint-info">
-              <strong>用途说明</strong>
-              <p>实时转录已经会在 final 返回前尝试讯飞实名。这里保留为离线复核工具：用于查看低置信/错误片段、人工确认、排除无效片段，以及用确认片段注册或更新声纹。</p>
-            </div>
-            <div class="toolbar voiceprint-toolbar">
-              <select id="voiceprint-conversation-select">
-                <option value="">选择会话</option>
-              </select>
-              <select id="voiceprint-status-filter">
-                <option value="actionable">需处理</option>
-                <option value="low">低置信</option>
-                <option value="error">错误</option>
-                <option value="nomatch">未命中</option>
-                <option value="conflict">冲突</option>
-                <option value="all">全部待处理</option>
-              </select>
-              <button id="voiceprint-refresh-conversations" type="button" class="secondary-button">刷新会话列表</button>
-              <button id="voiceprint-scan" type="button">离线扫描未确认</button>
-              <button id="voiceprint-backfill" type="button" class="secondary-button">重刷当前会话未确认</button>
-            </div>
-
-            <div class="voiceprint-stats">
-              <div class="memory-stat-card"><span class="meta-label">总 segment</span><strong id="voiceprint-total-count">0</strong></div>
-              <div class="memory-stat-card"><span class="meta-label">自动命中</span><strong id="voiceprint-auto-hit-count">0</strong></div>
-              <div class="memory-stat-card"><span class="meta-label">人工确认</span><strong id="voiceprint-human-count">0</strong></div>
-              <div class="memory-stat-card"><span class="meta-label">未确认</span><strong id="voiceprint-unresolved-count">0</strong></div>
-              <div class="memory-stat-card"><span class="meta-label">跳过太短</span><strong id="voiceprint-skipped-count">0</strong></div>
-              <div class="memory-stat-card"><span class="meta-label">错误</span><strong id="voiceprint-error-count">0</strong></div>
-            </div>
-
-            <div class="two-column">
-              <section class="card list-card">
-                <div class="card-header">
-                  <h2>按 Soniox 发言人分组</h2>
-                  <div class="badge-row">
-                    <span class="badge">已选 <strong id="voiceprint-selected-count">0</strong></span>
-                    <button id="voiceprint-clear-selection" type="button" class="secondary-button">清空选择</button>
-                  </div>
-                </div>
-                <div id="voiceprint-pending-list" class="list voiceprint-list"></div>
-              </section>
-
-              <section class="card detail-card">
-                <div class="detail">
-                  <div class="detail-header">
-                    <div>
-                      <p class="eyebrow">Segment 注册</p>
-                      <h2 id="voiceprint-panel-title">选择一个会话后扫描</h2>
-                    </div>
-                    <div id="voiceprint-panel-badges" class="badge-row"></div>
-                  </div>
-
-                  <div class="detail-section">
-                    <h3>批量操作</h3>
-                    <p class="subtle">先在左侧勾选确认可靠的 segment，再绑定已有发言人或新建发言人注册声纹。无法确认或音频无效的片段请排除，避免重复扫描。</p>
-                    <div class="form-grid voiceprint-form">
-                      <label class="full-width">
-                        <span>目标模式</span>
-                        <select id="voiceprint-speaker-mode">
-                          <option value="new">新建发言人并注册</option>
-                          <option value="existing">绑定已有发言人</option>
-                        </select>
-                      </label>
-                      <label id="voiceprint-existing-speaker-field" class="full-width hidden">
-                        <span>已有发言人</span>
-                        <select id="voiceprint-existing-speaker">
-                          <option value="">请选择已有发言人</option>
-                        </select>
-                      </label>
-                      <label id="voiceprint-new-name-field">
-                        <span>新发言人姓名</span>
-                        <input id="voiceprint-new-speaker-name" type="text" placeholder="例如：张三" />
-                      </label>
-                      <label id="voiceprint-new-identity-field">
-                        <span>身份标签</span>
-                        <select id="voiceprint-new-identity">
-                          <option value="">未确认</option>
-                        </select>
-                      </label>
-                    </div>
-                  </div>
-
-                  <div class="detail-section">
-                    <h3>执行</h3>
-                    <div class="actions voiceprint-actions">
-                      <button id="voiceprint-enroll-existing" type="button" class="secondary-button">确认为已有发言人</button>
-                      <button id="voiceprint-enroll-new" type="button">创建新发言人并注册</button>
-                      <button id="voiceprint-exclude" type="button" class="secondary-button">排除所选 segment</button>
-                    </div>
-                  </div>
-
-                  <div class="detail-section">
-                    <h3>当前会话</h3>
-                    <div class="meta-grid voiceprint-meta">
-                      <div><span class="meta-label">Conversation ID</span><span id="voiceprint-conversation-id">-</span></div>
-                      <div><span class="meta-label">当前状态</span><span id="voiceprint-current-status">-</span></div>
-                      <div><span class="meta-label">选择数</span><span id="voiceprint-selected-summary">0</span></div>
-                    </div>
-                  </div>
-                </div>
-              </section>
-            </div>
-        </section>
-
-        <section class="tab-panel" id="tab-conversations">
+        <section class="tab-panel active" id="tab-conversations">
           <div class="toolbar">
-            <input id="conv-speaker-name" type="search" placeholder="发言人姓名或标签" />
+            <input id="conv-speaker-name" type="search" placeholder="发言人姓名或 Soniox 标签" />
             <select id="conv-identity-label">
               <option value="">全部身份</option>
             </select>
@@ -295,7 +68,7 @@
             </section>
 
             <section class="card detail-card">
-              <div id="conversation-empty" class="empty-state">选择一个会话后查看 transcript。</div>
+              <div id="conversation-empty" class="empty-state">选择一个会话后查看 transcript 和发言人补全工作区。</div>
               <div id="conversation-detail" class="detail hidden">
                 <div class="detail-header">
                   <div>
@@ -303,7 +76,7 @@
                     <h2 id="conversation-title">-</h2>
                   </div>
                   <div class="actions">
-                    <a id="conversation-audio-link" class="link-button hidden" target="_blank" rel="noreferrer">打开音频</a>
+                    <a id="conversation-audio-link" class="link-button hidden" target="_blank" rel="noreferrer">打开整场音频</a>
                   </div>
                 </div>
 
@@ -317,7 +90,15 @@
                 </div>
 
                 <div class="detail-section">
-                  <h3>参与者概览</h3>
+                  <div class="conversation-workbench-header">
+                    <div>
+                      <h3>参与者概览</h3>
+                      <p class="subtle">按当前会话内 Soniox speaker_label 汇总。点击某组可过滤 transcript。</p>
+                    </div>
+                    <div class="badge-row">
+                      <button id="conversation-clear-speaker-filter" type="button" class="secondary-button">查看全部</button>
+                    </div>
+                  </div>
                   <div id="conversation-speakers" class="segment-list"></div>
                 </div>
 
@@ -325,11 +106,12 @@
                   <div class="conversation-workbench-header">
                     <div>
                       <h3>发言人补全</h3>
-                      <p class="subtle">在下面的 transcript 勾选片段，直接创建声音特性或绑定到已有发言人，然后重刷当前会话。</p>
+                      <p class="subtle">在 transcript 勾选片段，直接创建声音特性、绑定到已有发言人，或重刷当前会话。</p>
                     </div>
                     <div class="badge-row">
                       <span class="badge">已选 <strong id="conversation-selected-count">0</strong></span>
-                      <span class="badge">未确认 <strong id="conversation-unresolved-count">0</strong></span>
+                      <span class="badge">已选时长 <strong id="conversation-selected-duration">0.0s</strong></span>
+                      <span class="badge">涉及标签 <strong id="conversation-selected-labels">-</strong></span>
                     </div>
                   </div>
                   <audio id="conversation-audio-player" controls class="hidden conversation-audio-player"></audio>
@@ -371,7 +153,7 @@
 
                 <div class="detail-section">
                   <h3>Transcript</h3>
-                  <p class="subtle transcript-help">显示规则：已识别直接显示实名；未识别显示 Soniox speaker 标签。每条都支持基于整场会话音频的精准试听。</p>
+                  <p class="subtle transcript-help">每条都可试听。已识别显示实名，未识别显示 Soniox 标签。</p>
                   <div id="conversation-segments" class="segment-list transcript-list"></div>
                 </div>
               </div>
@@ -379,6 +161,127 @@
           </div>
         </section>
 
+        <section class="tab-panel" id="tab-directory">
+          <div class="toolbar">
+            <input id="speaker-q" type="search" placeholder="搜索姓名、标签、身份、样本文本" />
+            <select id="speaker-confirmation">
+              <option value="confirmed" selected>仅正式发言人</option>
+              <option value="all">全部</option>
+            </select>
+            <input id="speaker-start" type="datetime-local" />
+            <input id="speaker-end" type="datetime-local" />
+            <select id="speaker-page-size">
+              <option value="10">每页 10 条</option>
+              <option value="20" selected>每页 20 条</option>
+              <option value="50">每页 50 条</option>
+            </select>
+            <button id="speaker-search">查询</button>
+          </div>
+
+          <div class="two-column">
+            <section class="card list-card">
+              <div class="card-header">
+                <h2>正式发言人</h2>
+                <span id="speaker-list-count" class="subtle"></span>
+              </div>
+              <div id="speaker-list" class="list"></div>
+              <div class="pagination">
+                <button id="speaker-prev-page" type="button" class="secondary-button">上一页</button>
+                <span id="speaker-pagination" class="subtle">第 1 / 1 页</span>
+                <button id="speaker-next-page" type="button" class="secondary-button">下一页</button>
+              </div>
+            </section>
+
+            <section class="card detail-card">
+              <div id="speaker-empty" class="empty-state">选择一个正式发言人后查看详情和修改信息。</div>
+              <div id="speaker-detail" class="detail hidden">
+                <div class="detail-header">
+                  <div>
+                    <p class="eyebrow">发言人详情</p>
+                    <h2 id="speaker-detail-title">-</h2>
+                  </div>
+                  <div id="speaker-detail-badges" class="badge-row"></div>
+                </div>
+
+                <div class="meta-grid">
+                  <div><span class="meta-label">ID</span><span id="speaker-id"></span></div>
+                  <div><span class="meta-label">首次出现</span><span id="speaker-first-seen"></span></div>
+                  <div><span class="meta-label">最近出现</span><span id="speaker-last-seen"></span></div>
+                  <div><span class="meta-label">会话数</span><span id="speaker-conv-count"></span></div>
+                  <div><span class="meta-label">片段数</span><span id="speaker-seg-count"></span></div>
+                </div>
+
+                <div class="detail-section">
+                  <h3>样本音频</h3>
+                  <audio id="speaker-audio" controls class="hidden"></audio>
+                  <p id="speaker-audio-empty" class="subtle">暂无可播放样本。</p>
+                </div>
+
+                <div class="detail-section">
+                  <h3>代表性片段</h3>
+                  <div id="speaker-representative-segments" class="segment-list"></div>
+                </div>
+
+                <div class="detail-section">
+                  <h3>最近会话</h3>
+                  <div id="speaker-recent-conversations" class="segment-list"></div>
+                </div>
+
+                <form id="speaker-form" class="detail-section form-grid">
+                  <h3>确认信息</h3>
+                  <label>
+                    <span>姓名</span>
+                    <input id="speaker-form-name" type="text" placeholder="例如：张三" />
+                  </label>
+                  <label>
+                    <span>身份</span>
+                    <select id="speaker-form-identity">
+                      <option value="">未确认</option>
+                    </select>
+                  </label>
+                  <label class="full-width">
+                    <span>备注</span>
+                    <textarea id="speaker-form-notes" rows="4" placeholder="补充说明"></textarea>
+                  </label>
+                  <div class="actions full-width">
+                    <button type="submit">保存确认</button>
+                  </div>
+                </form>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="tab-panel" id="tab-systems">
+          <section class="memory-panel systems-panel">
+            <div class="memory-panel-header">
+              <div>
+                <p class="eyebrow">System Tools</p>
+                <h2>记忆同步与补充</h2>
+              </div>
+              <div id="memory-job-badge" class="badge-row"></div>
+            </div>
+            <div class="memory-stats">
+              <div class="memory-stat-card"><span class="meta-label">OMI Memories</span><strong id="memory-omi-count">0</strong></div>
+              <div class="memory-stat-card"><span class="meta-label">Knowledge Memories</span><strong id="memory-knowledge-count">0</strong></div>
+              <div class="memory-stat-card"><span class="meta-label">待处理 Candidates</span><strong id="memory-candidate-count">0</strong></div>
+            </div>
+            <div class="memory-actions">
+              <label class="toggle-field">
+                <input id="memory-ai-enabled" type="checkbox" />
+                <span>启用 AI 补充入口（默认关闭）</span>
+              </label>
+              <input id="memory-api-key" type="password" placeholder="临时 MiniMax API Key（可选，不保存）" />
+              <button id="memory-sync-omi" type="button" class="secondary-button">同步 OMI Memories 到 Knowledge</button>
+              <button id="memory-run-ai" type="button">执行 AI 补充</button>
+            </div>
+            <div class="memory-meta">
+              <p id="memory-ai-availability" class="subtle">AI 环境检查中...</p>
+              <p id="memory-last-omi-import" class="subtle">最近 OMI 导入：-</p>
+              <p id="memory-last-ai-supplement" class="subtle">最近 AI 补充：-</p>
+            </div>
+          </section>
+        </section>
       </main>
     </div>
 
