@@ -530,7 +530,7 @@ button,
 }
 
 /* Modal Styles */
-.modal-backdrop {
+.modal-backdrop:not(.hidden) {
   position: fixed;
   inset: 0;
   z-index: 1000;
@@ -540,6 +540,10 @@ button,
   padding: 20px;
   background: rgba(22, 50, 43, 0.48);
   backdrop-filter: blur(6px);
+}
+
+.modal-backdrop.hidden {
+  display: none;
 }
 
 .modal-card {
