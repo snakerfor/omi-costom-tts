@@ -169,6 +169,7 @@
               </select>
               <button id="voiceprint-refresh-conversations" type="button" class="secondary-button">刷新会话列表</button>
               <button id="voiceprint-scan" type="button">离线扫描未确认</button>
+              <button id="voiceprint-backfill" type="button" class="secondary-button">重刷当前会话未确认</button>
             </div>
 
             <div class="voiceprint-stats">
@@ -183,7 +184,7 @@
             <div class="two-column">
               <section class="card list-card">
                 <div class="card-header">
-                  <h2>待确认 Segment</h2>
+                  <h2>按 Soniox 发言人分组</h2>
                   <div class="badge-row">
                     <span class="badge">已选 <strong id="voiceprint-selected-count">0</strong></span>
                     <button id="voiceprint-clear-selection" type="button" class="secondary-button">清空选择</button>
@@ -304,7 +305,10 @@
                     <p class="eyebrow">会话详情</p>
                     <h2 id="conversation-title">-</h2>
                   </div>
-                  <a id="conversation-audio-link" class="link-button hidden" target="_blank" rel="noreferrer">打开音频</a>
+                  <div class="actions">
+                    <button id="conversation-go-voiceprint" type="button" class="secondary-button">发言人补全</button>
+                    <a id="conversation-audio-link" class="link-button hidden" target="_blank" rel="noreferrer">打开音频</a>
+                  </div>
                 </div>
 
                 <div class="meta-grid">

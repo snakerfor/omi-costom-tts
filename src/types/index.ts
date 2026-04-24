@@ -18,6 +18,7 @@ export interface SonioxResponse {
 
 // Segment returned to APP (matches APP's response mode config)
 export interface Segment {
+  id?: string;
   text: string;
   start: number;
   end: number;
@@ -28,6 +29,7 @@ export interface Segment {
   speaker_identity?: string | null;
   speaker_confidence?: number;
   speaker_resolution?: string;
+  speaker_error?: string | null;
 }
 
 // APP message control signal

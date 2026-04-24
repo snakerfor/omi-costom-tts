@@ -43,10 +43,20 @@ export interface SegmentVoiceprintPendingItem {
   text: string;
   audioUrl: string | null;
   speakerLabel: string | null;
+  sourceSpeakerLabel: string | null;
   decision: string;
   topScore: number | null;
   secondScore: number | null;
   resolutionMethod: string | null;
+}
+
+export interface SegmentVoiceprintPendingGroup {
+  speakerLabel: string | null;
+  segmentCount: number;
+  totalDurationMs: number;
+  unresolvedCount: number;
+  samples: string[];
+  segments: SegmentVoiceprintPendingItem[];
 }
 
 export interface SegmentVoiceprintStats {
@@ -61,6 +71,7 @@ export interface SegmentVoiceprintStats {
 export interface SegmentVoiceprintPendingResult {
   conversationId: string;
   segments: SegmentVoiceprintPendingItem[];
+  groups: SegmentVoiceprintPendingGroup[];
   stats: SegmentVoiceprintStats;
 }
 
@@ -137,6 +148,7 @@ interface SegmentRow {
   start_ms: number;
   end_ms: number;
   text: string;
+  original_speaker_label: string | null;
   speaker_label: string | null;
   speaker_id: string | null;
   speaker_name: string | null;
@@ -426,6 +438,7 @@ function getSegmentRows(conversationId: string, onlyUnresolved: boolean, limit: 
       cs.start_ms,
       cs.end_ms,
       cs.text,
+      cs.original_speaker_label,
       cs.speaker_label,
       cs.speaker_id,
       cs.speaker_name,
@@ -482,6 +495,36 @@ function getConversationVoiceprintStats(conversationId: string): SegmentVoicepri
     errorCount: Number(rows?.errorCount || 0),
     unresolvedCount: Number(rows?.unresolvedCount || 0),
   };
+}
+
+function buildPendingGroups(items: SegmentVoiceprintPendingItem[]): SegmentVoiceprintPendingGroup[] {
+  const groups = new Map<string, SegmentVoiceprintPendingGroup>();
+
+  for (const item of items) {
+    const label = item.sourceSpeakerLabel || item.speakerLabel || 'unknown';
+    const existing = groups.get(label) || {
+      speakerLabel: label === 'unknown' ? null : label,
+      segmentCount: 0,
+      totalDurationMs: 0,
+      unresolvedCount: 0,
+      samples: [],
+      segments: [],
+    };
+    existing.segmentCount += 1;
+    existing.totalDurationMs += Math.max(0, item.endMs - item.startMs);
+    existing.unresolvedCount += 1;
+    if (existing.samples.length < 3 && item.text) {
+      existing.samples.push(item.text);
+    }
+    existing.segments.push(item);
+    groups.set(label, existing);
+  }
+
+  return [...groups.values()].sort((a, b) => (
+    b.totalDurationMs - a.totalDurationMs ||
+    b.segmentCount - a.segmentCount ||
+    String(a.speakerLabel || '').localeCompare(String(b.speakerLabel || ''))
+  ));
 }
 
 export async function listVoiceprintFeatureList(): Promise<Array<{ featureId: string; featureInfo?: string }>> {
@@ -574,6 +617,7 @@ export function getPendingSegments(conversationId: string): SegmentVoiceprintPen
       text: row.text,
       audioUrl: match?.request_audio_path ? match.request_audio_path : null,
       speakerLabel: row.speaker_label,
+      sourceSpeakerLabel: row.original_speaker_label || row.speaker_label,
       decision: match?.decision || row.resolution_method || 'pending',
       topScore: match?.top_score ?? null,
       secondScore: match?.second_score ?? null,
@@ -584,6 +628,7 @@ export function getPendingSegments(conversationId: string): SegmentVoiceprintPen
   return {
     conversationId: conversation.id,
     segments,
+    groups: buildPendingGroups(segments),
     stats,
   };
 }

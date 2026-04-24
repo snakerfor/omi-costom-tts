@@ -536,6 +536,31 @@ button,
   max-height: calc(100vh - 340px);
 }
 
+.voiceprint-group {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.voiceprint-group + .voiceprint-group {
+  margin-top: 14px;
+}
+
+.voiceprint-group-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.voiceprint-group-list {
+  display: grid;
+  gap: 12px;
+}
+
 .voiceprint-segment {
   display: grid;
   gap: 10px;
@@ -618,6 +643,10 @@ button,
   .transcript-row,
   .voiceprint-segment-top {
     grid-template-columns: 1fr;
+  }
+
+  .voiceprint-group-header {
+    flex-direction: column;
   }
 
   .topbar {

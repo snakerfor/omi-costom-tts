@@ -15,6 +15,12 @@ export interface FinalizedSegment {
   absolute_end_time: string;
   speaker_label: string | null;
   text: string;
+  speaker_id?: string | null;
+  speaker_name?: string | null;
+  speaker_identity?: string | null;
+  confidence?: number | null;
+  resolution_method?: string | null;
+  error_message?: string | null;
 }
 
 export interface FinalizeConversationOptions {
@@ -98,6 +104,56 @@ function parseNdjson(content: string): RawTranscriptEvent[] {
     .map(line => line.trim())
     .filter(Boolean)
     .map(line => JSON.parse(line) as RawTranscriptEvent);
+}
+
+function normalizeFinalSegments(events: RawTranscriptEvent[]): FinalizedSegment[] {
+  const seen = new Set<string>();
+  const out: FinalizedSegment[] = [];
+
+  for (const event of events) {
+    const segment = event.segment;
+    if (event.event !== 'final_segment' || !segment) {
+      continue;
+    }
+
+    const text = String(segment.text || '').trim();
+    if (!text) {
+      continue;
+    }
+
+    const normalized: FinalizedSegment = {
+      id: segment.id,
+      start_ms: Number(segment.start_ms || 0),
+      end_ms: Number(segment.end_ms || 0),
+      absolute_start_time: segment.absolute_start_time,
+      absolute_end_time: segment.absolute_end_time,
+      speaker_label: segment.speaker_label,
+      text,
+      speaker_id: segment.speaker_id,
+      speaker_name: segment.speaker_name,
+      speaker_identity: segment.speaker_identity,
+      confidence: segment.confidence,
+      resolution_method: segment.resolution_method,
+      error_message: segment.error_message,
+    };
+    normalized.end_ms = Math.max(normalized.start_ms, normalized.end_ms);
+
+    const key = [
+      normalized.id,
+      normalized.start_ms,
+      normalized.end_ms,
+      normalized.speaker_label ?? '',
+      normalized.text,
+    ].join('|');
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push(normalized);
+  }
+
+  out.sort((a, b) => (a.start_ms - b.start_ms) || (a.end_ms - b.end_ms) || a.id.localeCompare(b.id));
+  return out;
 }
 
 function normalizeFinalTokens(events: RawTranscriptEvent[]): SonioxToken[] {
@@ -195,6 +251,29 @@ function remapTokensToOriginalTimeline(tokens: SonioxToken[], timeline: Timeline
   });
 }
 
+function remapSegmentsToOriginalTimeline(
+  segments: FinalizedSegment[],
+  timeline: TimelineMapEntry[],
+  recordingStartedAt: string,
+): FinalizedSegment[] {
+  if (!timeline.length) {
+    return segments;
+  }
+
+  const baseTime = new Date(recordingStartedAt).getTime();
+  return segments.map(segment => {
+    const mappedStart = mapSentMsToOriginalMs(segment.start_ms, timeline);
+    const mappedEnd = Math.max(mappedStart, mapSentMsToOriginalMs(segment.end_ms, timeline));
+    return {
+      ...segment,
+      start_ms: mappedStart,
+      end_ms: mappedEnd,
+      absolute_start_time: new Date(baseTime + mappedStart).toISOString(),
+      absolute_end_time: new Date(baseTime + mappedEnd).toISOString(),
+    };
+  });
+}
+
 function buildSegments(tokens: SonioxToken[], recordingStartedAt: string): FinalizedSegment[] {
   if (!tokens.length) return [];
 
@@ -242,6 +321,7 @@ function buildSegments(tokens: SonioxToken[], recordingStartedAt: string): Final
         absolute_end_time: absEnd,
         speaker_label: current.speaker_label,
         text: current.parts.join('').trim(),
+        resolution_method: 'soniox_finalized',
       });
 
       current = {
@@ -268,6 +348,7 @@ function buildSegments(tokens: SonioxToken[], recordingStartedAt: string): Final
       absolute_end_time: absEnd,
       speaker_label: current.speaker_label,
       text: current.parts.join('').trim(),
+      resolution_method: 'soniox_finalized',
     });
   }
 
@@ -287,8 +368,13 @@ export async function finalizeConversation(options: FinalizeConversationOptions)
 
   const events = raw ? parseNdjson(raw) : [];
   const timeline = await readTimelineMap(options.rawTranscriptPath);
+  const finalSegments = remapSegmentsToOriginalTimeline(
+    normalizeFinalSegments(events),
+    timeline,
+    options.recordingStartedAt,
+  );
   const finalTokens = remapTokensToOriginalTimeline(normalizeFinalTokens(events), timeline);
-  const segments = buildSegments(finalTokens, options.recordingStartedAt);
+  const segments = finalSegments.length ? finalSegments : buildSegments(finalTokens, options.recordingStartedAt);
 
   await fs.mkdir(options.outputDir, { recursive: true });
   const outPath = path.join(options.outputDir, `${options.sessionId}.json`);

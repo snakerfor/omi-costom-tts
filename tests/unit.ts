@@ -78,6 +78,33 @@ async function testFinalizeConversationHandlesMissingAndDuplicates(tmpDir: strin
 
   assert.equal(finalized.segments.length, 1, 'duplicate final tokens should collapse into one segment');
   assert.equal(finalized.segments[0]?.text, '你好');
+
+  const segmentRecorder = new FinalResultRecorder('session-b', tmpDir);
+  await segmentRecorder.appendFinalSegment({
+    id: 'seg-recorded-1',
+    text: '我是党蟒',
+    start: 1.2,
+    end: 2.4,
+    speaker: '党蟒',
+    speaker_label: 'SPEAKER_01',
+    speaker_id: 'spk-1',
+    speaker_name: '党蟒',
+    speaker_identity: '家人',
+    speaker_confidence: 88,
+    speaker_resolution: 'xfyun_segment_hit',
+  }, '2026-01-01T00:00:00.000Z', 'seg-recorded-1');
+
+  const finalizedFromSegments = await finalizeConversation({
+    sessionId: 'session-b',
+    rawTranscriptPath: segmentRecorder.filePath,
+    outputDir: tmpDir,
+    recordingStartedAt: '2026-01-01T00:00:00.000Z',
+  });
+
+  assert.equal(finalizedFromSegments.segments.length, 1, 'recorded final segments should be used during finalization');
+  assert.equal(finalizedFromSegments.segments[0]?.speaker_id, 'spk-1');
+  assert.equal(finalizedFromSegments.segments[0]?.speaker_name, '党蟒');
+  assert.equal(finalizedFromSegments.segments[0]?.resolution_method, 'xfyun_segment_hit');
 }
 
 async function testAudioFileWriterStreams(tmpDir: string): Promise<void> {

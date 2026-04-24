@@ -163,6 +163,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
 
     await recorderReady.catch(() => undefined);
     await ensureWavFinalized('[AudioFile] Saved WAV:');
+    await finalSegmentQueue.catch(() => undefined);
     try {
       await fs.writeFile(
         `${recorder.filePath}.timeline.json`,
@@ -231,9 +232,9 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
           INSERT INTO conversation_segments (
             id, conversation_id, audio_file_id,
             start_ms, end_ms, absolute_start_time, absolute_end_time,
-            original_speaker_label, speaker_label, speaker_id, speaker_name, text,
+            original_speaker_label, speaker_label, speaker_id, speaker_name, speaker_identity, text,
             confidence, resolution_method, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (const seg of segmentsForStorage) {
@@ -247,11 +248,12 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
             seg.absolute_end_time,
             originalSpeakerBySegmentId.get(seg.id) ?? seg.speaker_label,
             seg.speaker_label,
-            null,
-            null,
+            seg.speaker_id ?? null,
+            seg.speaker_name ?? null,
+            seg.speaker_identity ?? null,
             seg.text,
-            null,
-            'soniox_finalized',
+            seg.confidence ?? null,
+            seg.resolution_method || 'soniox_finalized',
             now,
             now,
           );
@@ -377,7 +379,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
 
     const seg = builder.flushPending();
     if (seg) {
-      ws.send(JSON.stringify({ segments: [seg] }));
+      sendFinalSegment(seg);
     }
 
     stopAcceptingAudio();
@@ -446,33 +448,53 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
         realtimeVoiceprintTimeoutMs,
         'xfyun realtime voiceprint',
       );
-      if (!match || !match.speakerId || !match.speakerName) {
+      if (!match) {
         return seg;
       }
 
-      return {
+      const enrichedBase: Segment = {
         ...seg,
+        speaker_confidence: match.score ?? undefined,
+        speaker_resolution: match.decision || seg.speaker_resolution,
+      };
+      if (!match.speakerId || !match.speakerName) {
+        return enrichedBase;
+      }
+
+      return {
+        ...enrichedBase,
         speaker_label: seg.speaker,
         speaker: match.speakerName,
         speaker_id: match.speakerId,
         speaker_name: match.speakerName,
         speaker_identity: match.speakerIdentity,
-        speaker_confidence: match.score ?? undefined,
-        speaker_resolution: match.decision,
       };
     } catch (err) {
       console.warn('[XFYUN] realtime voiceprint skipped:', String((err as Error)?.message ?? err));
-      return seg;
+      return {
+        ...seg,
+        speaker_resolution: 'xfyun_error',
+        speaker_error: String((err as Error)?.message ?? err),
+      };
     }
+  }
+
+  async function recordAndSendFinalSegment(seg: Segment): Promise<void> {
+    const segmentId = seg.id || genId('seg');
+    const withId: Segment = { ...seg, id: segmentId };
+    const enriched = await enrichSegmentWithRealtimeVoiceprint(withId);
+    try {
+      await recorder.appendFinalSegment(enriched, firstAudioFrameAt ?? connectedAt, segmentId);
+    } catch (err) {
+      console.error('[Recorder] append final segment failed:', err);
+    }
+    console.log('[Soniox] Final:', JSON.stringify(enriched));
+    ws.send(JSON.stringify({ segments: [enriched] }));
   }
 
   function sendFinalSegment(seg: Segment): void {
     finalSegmentQueue = finalSegmentQueue
-      .then(async () => {
-        const enriched = await enrichSegmentWithRealtimeVoiceprint(seg);
-        console.log('[Soniox] Final:', JSON.stringify(enriched));
-        ws.send(JSON.stringify({ segments: [enriched] }));
-      })
+      .then(() => recordAndSendFinalSegment(seg))
       .catch(err => {
         console.warn('[Soniox] final segment send failed:', String((err as Error)?.message ?? err));
       });
@@ -610,7 +632,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       pendingCloseStream = false;
       const seg = builder.flushPending();
       if (seg) {
-        ws.send(JSON.stringify({ segments: [seg] }));
+        sendFinalSegment(seg);
       }
       stopAcceptingAudio();
       sonioxSession?.finish();
@@ -650,7 +672,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
             if (sonioxConnected) {
               const seg = builder.flushPending();
               if (seg) {
-                ws.send(JSON.stringify({ segments: [seg] }));
+                sendFinalSegment(seg);
               }
               stopAcceptingAudio();
               sonioxSession?.finish();

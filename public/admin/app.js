@@ -12,6 +12,7 @@
     voiceprintConversations: [],
     voiceprintConversationId: null,
     voiceprintPendingSegments: [],
+    voiceprintGroups: [],
     voiceprintStats: {
       totalSegments: 0,
       autoHitCount: 0,
@@ -200,6 +201,16 @@
     });
   }
 
+  function getVisibleVoiceprintGroups() {
+    const visibleIds = new Set(getVisibleVoiceprintSegments().map((item) => item.segmentId));
+    return (state.voiceprintGroups || [])
+      .map((group) => ({
+        ...group,
+        segments: (group.segments || []).filter((item) => visibleIds.has(item.segmentId)),
+      }))
+      .filter((group) => group.segments.length > 0);
+  }
+
   function getVoiceprintSelectedIds() {
     return Array.from(state.voiceprintSelectedSegmentIds);
   }
@@ -237,7 +248,9 @@
     const conversationId = detail?.conversationId || state.voiceprintConversationId || '-';
     qs('#voiceprint-panel-title').textContent = detail ? `会话 ${conversationId}` : '选择一个会话后离线扫描';
     qs('#voiceprint-conversation-id').textContent = conversationId || '-';
-    qs('#voiceprint-current-status').textContent = detail ? `已加载 ${getVisibleVoiceprintSegments().length} 条可见待处理` : '未加载';
+    qs('#voiceprint-current-status').textContent = detail
+      ? `已加载 ${getVisibleVoiceprintGroups().length} 组 / ${getVisibleVoiceprintSegments().length} 条待处理`
+      : '未加载';
     qs('#voiceprint-panel-badges').innerHTML = detail
       ? [
         `<span class="badge">待确认 ${detail.stats?.unresolvedCount || 0}</span>`,
@@ -249,39 +262,66 @@
   function renderVoiceprintPendingList() {
     const listEl = qs('#voiceprint-pending-list');
     const filterText = '';
-    const rows = getVisibleVoiceprintSegments();
-    listEl.innerHTML = rows.length
-      ? rows.map((item) => {
-        const checked = state.voiceprintSelectedSegmentIds.has(item.segmentId) ? 'checked' : '';
-        const scoreText = item.topScore == null ? '-' : item.topScore.toFixed(1);
-        const secondScoreText = item.secondScore == null ? '-' : item.secondScore.toFixed(1);
-        const hasAudio = !!item.audioUrl;
-        return `
-          <article class="segment-item voiceprint-segment ${checked ? 'active' : ''}" data-voiceprint-segment-id="${escapeHtml(item.segmentId)}">
-            <div class="voiceprint-segment-top">
-              <label class="voiceprint-check">
-                <input type="checkbox" data-voiceprint-select ${checked} />
-                <span>选择</span>
-              </label>
+    const groups = getVisibleVoiceprintGroups();
+    listEl.innerHTML = groups.length
+      ? groups.map((group) => `
+        <section class="voiceprint-group">
+          <div class="voiceprint-group-header">
+            <div>
               <div class="segment-title">
-                <span>${escapeHtml(formatSeconds(item.startMs))} - ${escapeHtml(formatSeconds(item.endMs))}</span>
-                <span class="subtle">${escapeHtml(item.speakerLabel || '原始标签未标注')}</span>
+                <strong>${escapeHtml(group.speakerLabel || '未标注 Soniox speaker')}</strong>
+                <span class="subtle">${group.segmentCount} 条 / ${(group.totalDurationMs / 1000).toFixed(1)}s</span>
               </div>
+              <p class="subtle">${escapeHtml((group.samples || []).join(' / ') || '暂无代表文本')}</p>
             </div>
-            <div class="badge-row">
-              <span class="badge ${voiceprintDecisionClass(item.decision)}">${escapeHtml(voiceprintDecisionLabel(item.decision || 'pending'))}</span>
-              <span class="badge">Top1 ${escapeHtml(scoreText)}</span>
-              <span class="badge">Top2 ${escapeHtml(secondScoreText)}</span>
-              <span class="badge ${item.resolutionMethod ? '' : 'warning'}">${escapeHtml(voiceprintDecisionLabel(item.resolutionMethod || '未确认'))}</span>
-            </div>
-            <p class="subtle">Segment ID: ${escapeHtml(item.segmentId)}</p>
-            <p>${highlightText(item.text || '', filterText)}</p>
-            ${hasAudio ? `<audio controls preload="none" src="${escapeHtml(item.audioUrl)}"></audio>` : '<p class="subtle">暂无音频，先执行扫描生成试听片段。</p>'}
-          </article>
-        `;
-      }).join('')
+            <button type="button" class="secondary-button inline-action" data-voiceprint-select-group="${escapeHtml(group.speakerLabel || 'unknown')}">全选本组</button>
+          </div>
+          <div class="voiceprint-group-list">
+            ${(group.segments || []).map((item) => {
+              const checked = state.voiceprintSelectedSegmentIds.has(item.segmentId) ? 'checked' : '';
+              const scoreText = item.topScore == null ? '-' : item.topScore.toFixed(1);
+              const secondScoreText = item.secondScore == null ? '-' : item.secondScore.toFixed(1);
+              const hasAudio = !!item.audioUrl;
+              return `
+                <article class="segment-item voiceprint-segment ${checked ? 'active' : ''}" data-voiceprint-segment-id="${escapeHtml(item.segmentId)}">
+                  <div class="voiceprint-segment-top">
+                    <label class="voiceprint-check">
+                      <input type="checkbox" data-voiceprint-select ${checked} />
+                      <span>选择</span>
+                    </label>
+                    <div class="segment-title">
+                      <span>${escapeHtml(formatSeconds(item.startMs))} - ${escapeHtml(formatSeconds(item.endMs))}</span>
+                      <span class="subtle">当前标签 ${escapeHtml(item.speakerLabel || '未标注')}</span>
+                    </div>
+                  </div>
+                  <div class="badge-row">
+                    <span class="badge">${escapeHtml(item.sourceSpeakerLabel || item.speakerLabel || 'unknown')}</span>
+                    <span class="badge ${voiceprintDecisionClass(item.decision)}">${escapeHtml(voiceprintDecisionLabel(item.decision || 'pending'))}</span>
+                    <span class="badge">Top1 ${escapeHtml(scoreText)}</span>
+                    <span class="badge">Top2 ${escapeHtml(secondScoreText)}</span>
+                    <span class="badge ${item.resolutionMethod ? '' : 'warning'}">${escapeHtml(voiceprintDecisionLabel(item.resolutionMethod || '未确认'))}</span>
+                  </div>
+                  <p class="subtle">Segment ID: ${escapeHtml(item.segmentId)}</p>
+                  <p>${highlightText(item.text || '', filterText)}</p>
+                  ${hasAudio ? `<audio controls preload="none" src="${escapeHtml(item.audioUrl)}"></audio>` : '<p class="subtle">暂无音频，先执行扫描生成试听片段。</p>'}
+                </article>
+              `;
+            }).join('')}
+          </div>
+        </section>
+      `).join('')
       : '<p class="subtle">当前筛选条件下没有待处理 segment。可切换筛选或执行离线扫描未确认。</p>';
 
+    listEl.querySelectorAll('[data-voiceprint-select-group]').forEach((node) => {
+      node.addEventListener('click', () => {
+        const groupKey = node.getAttribute('data-voiceprint-select-group') || 'unknown';
+        const group = getVisibleVoiceprintGroups().find((item) => (item.speakerLabel || 'unknown') === groupKey);
+        if (!group) return;
+        (group.segments || []).forEach((segment) => state.voiceprintSelectedSegmentIds.add(segment.segmentId));
+        updateVoiceprintSelectionSummary();
+        renderVoiceprintPendingList();
+      });
+    });
     listEl.querySelectorAll('[data-voiceprint-select]').forEach((node) => {
       node.addEventListener('change', () => {
         const row = node.closest('[data-voiceprint-segment-id]');
@@ -317,6 +357,7 @@
   async function loadVoiceprintPendingSegments() {
     if (!state.voiceprintConversationId) {
       state.voiceprintPendingSegments = [];
+      state.voiceprintGroups = [];
       state.voiceprintStats = {
         totalSegments: 0,
         autoHitCount: 0,
@@ -333,6 +374,7 @@
 
     const result = await apiGet(`/api/admin/conversations/${encodeURIComponent(state.voiceprintConversationId)}/voiceprint/pending-segments`);
     state.voiceprintPendingSegments = result.data.segments || [];
+    state.voiceprintGroups = result.data.groups || [];
     state.voiceprintStats = result.data.stats || state.voiceprintStats;
     const validIds = new Set(getVisibleVoiceprintSegments().map((segment) => segment.segmentId));
     state.voiceprintSelectedSegmentIds = new Set([...state.voiceprintSelectedSegmentIds].filter((segmentId) => validIds.has(segmentId)));
@@ -359,6 +401,20 @@
     });
     await loadVoiceprintPendingSegments();
     window.alert(`扫描完成：自动命中 ${result.data.hit}，低置信 ${result.data.lowConfidence}，冲突 ${result.data.conflict}，未命中 ${result.data.noMatch}，跳过 ${result.data.skipped}，错误 ${result.data.error}`);
+  }
+
+  async function backfillVoiceprintConversation() {
+    if (!state.voiceprintConversationId) {
+      throw new Error('请先选择会话');
+    }
+    const result = await apiSend(`/api/admin/conversations/${encodeURIComponent(state.voiceprintConversationId)}/voiceprint/xfyun/backfill`, 'POST', {
+      onlyUnresolved: true,
+      limit: 1000,
+      dryRun: false,
+    });
+    await loadVoiceprintPendingSegments();
+    await loadConversations(false);
+    window.alert(`重刷完成：自动命中 ${result.data.hit}，低置信 ${result.data.lowConfidence}，冲突 ${result.data.conflict}，未命中 ${result.data.noMatch}，跳过 ${result.data.skipped}，错误 ${result.data.error}`);
   }
 
   async function enrollVoiceprintSegments(mode) {
@@ -614,6 +670,7 @@
   function resetConversationDetail() {
     qs('#conversation-empty').classList.remove('hidden');
     qs('#conversation-detail').classList.add('hidden');
+    qs('#conversation-go-voiceprint').disabled = true;
   }
 
   async function loadConversations(resetPage) {
@@ -681,6 +738,7 @@
       audioLink.classList.add('hidden');
       audioLink.removeAttribute('href');
     }
+    qs('#conversation-go-voiceprint').disabled = false;
 
     qs('#conversation-speakers').innerHTML = detail.speakers.length
       ? detail.speakers.map((speaker) => `
@@ -830,6 +888,7 @@
       renderVoiceprintPendingList();
     });
     qs('#voiceprint-scan').addEventListener('click', () => scanVoiceprintConversation().catch(showError));
+    qs('#voiceprint-backfill').addEventListener('click', () => backfillVoiceprintConversation().catch(showError));
     qs('#voiceprint-speaker-mode').addEventListener('change', updateVoiceprintSpeakerModeVisibility);
     qs('#voiceprint-enroll-existing').addEventListener('click', () => enrollVoiceprintSegments('existing').catch(showError));
     qs('#voiceprint-enroll-new').addEventListener('click', () => enrollVoiceprintSegments('new').catch(showError));
@@ -838,6 +897,18 @@
       state.voiceprintSelectedSegmentIds.clear();
       renderVoiceprintPendingList();
       updateVoiceprintSelectionSummary();
+    });
+    qs('#conversation-go-voiceprint').addEventListener('click', () => {
+      if (!state.selectedConversationId) {
+        return;
+      }
+      state.voiceprintConversationId = state.selectedConversationId;
+      const select = qs('#voiceprint-conversation-select');
+      if (select) {
+        select.value = state.voiceprintConversationId;
+      }
+      switchTab('voiceprint');
+      loadVoiceprintPendingSegments().catch(showError);
     });
   }
 
