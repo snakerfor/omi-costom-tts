@@ -14,9 +14,7 @@
           <h1>发言人管理后台</h1>
         </div>
         <div class="topbar-stats">
-          <span class="stat-chip">待确认姓名 <strong id="stat-unconfirmed-name">0</strong></span>
-          <span class="stat-chip warning">待确认身份 <strong id="stat-unconfirmed-identity">0</strong></span>
-          <span class="stat-chip danger">总待处理 <strong id="stat-unconfirmed-any">0</strong></span>
+          <span class="stat-chip">已确认发言人 <strong id="stat-confirmed-speakers">0</strong></span>
         </div>
       </header>
 
@@ -51,7 +49,6 @@
 
       <nav class="tabs">
         <button class="tab-button active" data-tab="directory">正式发言人</button>
-        <button class="tab-button" data-tab="voiceprint">声纹复核/注册</button>
         <button class="tab-button" data-tab="conversations">对话记录</button>
       </nav>
 
@@ -306,7 +303,6 @@
                     <h2 id="conversation-title">-</h2>
                   </div>
                   <div class="actions">
-                    <button id="conversation-go-voiceprint" type="button" class="secondary-button">发言人补全</button>
                     <a id="conversation-audio-link" class="link-button hidden" target="_blank" rel="noreferrer">打开音频</a>
                   </div>
                 </div>
@@ -326,8 +322,56 @@
                 </div>
 
                 <div class="detail-section">
+                  <div class="conversation-workbench-header">
+                    <div>
+                      <h3>发言人补全</h3>
+                      <p class="subtle">在下面的 transcript 勾选片段，直接创建声音特性或绑定到已有发言人，然后重刷当前会话。</p>
+                    </div>
+                    <div class="badge-row">
+                      <span class="badge">已选 <strong id="conversation-selected-count">0</strong></span>
+                      <span class="badge">未确认 <strong id="conversation-unresolved-count">0</strong></span>
+                    </div>
+                  </div>
+                  <audio id="conversation-audio-player" controls class="hidden conversation-audio-player"></audio>
+                  <p id="conversation-audio-empty" class="subtle">当前会话没有可播放音频。</p>
+                  <div class="form-grid conversation-voiceprint-form">
+                    <label class="full-width">
+                      <span>目标模式</span>
+                      <select id="conversation-speaker-mode">
+                        <option value="new">新建发言人并注册</option>
+                        <option value="existing">绑定已有发言人</option>
+                      </select>
+                    </label>
+                    <label id="conversation-existing-speaker-field" class="full-width hidden">
+                      <span>已有发言人</span>
+                      <select id="conversation-existing-speaker">
+                        <option value="">请选择已有发言人</option>
+                      </select>
+                    </label>
+                    <label id="conversation-new-name-field">
+                      <span>新发言人姓名</span>
+                      <input id="conversation-new-speaker-name" type="text" placeholder="例如：张三" />
+                    </label>
+                    <label id="conversation-new-identity-field">
+                      <span>身份标签</span>
+                      <select id="conversation-new-identity">
+                        <option value="">未确认</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="actions conversation-voiceprint-actions">
+                    <button id="conversation-enroll-existing" type="button" class="secondary-button">确认为已有发言人</button>
+                    <button id="conversation-enroll-new" type="button">创建新发言人并注册</button>
+                    <button id="conversation-exclude" type="button" class="secondary-button">排除所选片段</button>
+                    <button id="conversation-scan" type="button" class="secondary-button">离线扫描未确认</button>
+                    <button id="conversation-backfill" type="button" class="secondary-button">重刷当前会话未确认</button>
+                    <button id="conversation-clear-selection" type="button" class="secondary-button">清空选择</button>
+                  </div>
+                </div>
+
+                <div class="detail-section">
                   <h3>Transcript</h3>
-                  <p class="subtle transcript-help">核对方式：优先看“最终”列。若“原始”和“最终”不同，说明这条被阶段一 speaker 对齐纠正过。</p>
+                  <p class="subtle transcript-help">显示规则：已识别直接显示实名；未识别显示 Soniox speaker 标签。每条都支持基于整场会话音频的精准试听。</p>
                   <div id="conversation-segments" class="segment-list transcript-list"></div>
                 </div>
               </div>

@@ -425,6 +425,8 @@ button,
 .actions {
   display: flex;
   justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .empty-state {
@@ -458,7 +460,7 @@ button,
 
 .transcript-row {
   display: grid;
-  grid-template-columns: 180px 170px minmax(0, 1fr) 170px;
+  grid-template-columns: 180px minmax(0, 1fr) 220px;
   gap: 10px;
   align-items: start;
   padding: 10px 12px;
@@ -467,9 +469,9 @@ button,
   background: rgba(255, 255, 255, 0.76);
 }
 
-.transcript-row.changed {
-  border-color: rgba(217, 122, 0, 0.35);
-  background: linear-gradient(180deg, rgba(217, 122, 0, 0.05), rgba(255, 255, 255, 0.88));
+.transcript-row.unresolved {
+  border-color: rgba(217, 122, 0, 0.28);
+  background: linear-gradient(180deg, rgba(217, 122, 0, 0.04), rgba(255, 255, 255, 0.88));
 }
 
 .transcript-time,
@@ -479,19 +481,33 @@ button,
   gap: 4px;
 }
 
-.transcript-speakers {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  padding-top: 2px;
-}
-
 .transcript-display-name {
   font-size: 12px;
 }
 
 .transcript-actions {
   justify-items: start;
+}
+
+.conversation-workbench-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.conversation-audio-player {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.conversation-voiceprint-form {
+  margin-bottom: 12px;
+}
+
+.conversation-voiceprint-actions {
+  justify-content: flex-start;
 }
 
 .inline-action {
@@ -646,6 +662,10 @@ button,
   }
 
   .voiceprint-group-header {
+    flex-direction: column;
+  }
+
+  .conversation-workbench-header {
     flex-direction: column;
   }
 

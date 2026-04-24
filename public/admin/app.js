@@ -25,6 +25,7 @@
     voiceprintSpeakers: [],
     voiceprintStatusFilter: 'actionable',
   };
+  let conversationPlaybackStopTimer = null;
 
   function qs(selector) {
     return document.querySelector(selector);
@@ -42,6 +43,10 @@
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  function formatSegmentSeconds(value) {
+    return `${(Math.max(0, Number(value || 0)) / 1000).toFixed(1)}s`;
   }
 
   function escapeHtml(value) {
@@ -102,8 +107,12 @@
     state.identityOptions = Array.isArray(options) ? options : [];
     const speakerSelect = qs('#speaker-form-identity');
     const conversationSelect = qs('#conv-identity-label');
+    const conversationVoiceprintSelect = qs('#conversation-new-identity');
     speakerSelect.innerHTML = '<option value="">未确认</option>' + state.identityOptions.map((option) => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join('');
     conversationSelect.innerHTML = '<option value="">全部身份</option>' + state.identityOptions.map((option) => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join('');
+    if (conversationVoiceprintSelect) {
+      conversationVoiceprintSelect.innerHTML = '<option value="">未确认</option>' + state.identityOptions.map((option) => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join('');
+    }
   }
 
   async function loadIdentityOptions() {
@@ -112,9 +121,7 @@
   }
 
   function renderStats(stats) {
-    qs('#stat-unconfirmed-name').textContent = stats.unconfirmedName;
-    qs('#stat-unconfirmed-identity').textContent = stats.unconfirmedIdentity;
-    qs('#stat-unconfirmed-any').textContent = stats.unconfirmedAny;
+    qs('#stat-confirmed-speakers').textContent = String(stats.confirmed || 0);
   }
 
   function formatRunSummary(summary) {
@@ -238,10 +245,139 @@
 
   function setVoiceprintSpeakerOptions(speakers) {
     state.voiceprintSpeakers = Array.isArray(speakers) ? speakers : [];
-    const select = qs('#voiceprint-existing-speaker');
-    select.innerHTML = '<option value="">请选择已有发言人</option>' + state.voiceprintSpeakers.map((speaker) => `
+    const optionsHtml = '<option value="">请选择已有发言人</option>' + state.voiceprintSpeakers.map((speaker) => `
       <option value="${escapeHtml(speaker.id)}">${escapeHtml(speaker.name || speaker.display_label || speaker.id)}</option>
     `).join('');
+    const select = qs('#voiceprint-existing-speaker');
+    if (select) {
+      select.innerHTML = optionsHtml;
+    }
+    const conversationSelect = qs('#conversation-existing-speaker');
+    if (conversationSelect) {
+      conversationSelect.innerHTML = optionsHtml;
+    }
+  }
+
+  function conversationDisplaySpeaker(segment) {
+    return segment.speaker_name || segment.display_name || segment.speaker_label || '未知发言人';
+  }
+
+  function updateConversationSpeakerModeVisibility() {
+    const isExisting = qs('#conversation-speaker-mode').value === 'existing';
+    qs('#conversation-existing-speaker-field').classList.toggle('hidden', !isExisting);
+    qs('#conversation-new-name-field').classList.toggle('hidden', isExisting);
+    qs('#conversation-new-identity-field').classList.toggle('hidden', isExisting);
+  }
+
+  function updateConversationSelectionSummary(detail) {
+    const selectedCount = state.voiceprintSelectedSegmentIds.size;
+    const unresolvedCount = (detail?.segments || []).filter((segment) => !segment.speaker_id).length;
+    qs('#conversation-selected-count').textContent = String(selectedCount);
+    qs('#conversation-unresolved-count').textContent = String(unresolvedCount);
+  }
+
+  function clearConversationPlaybackTimer() {
+    if (conversationPlaybackStopTimer) {
+      window.clearTimeout(conversationPlaybackStopTimer);
+      conversationPlaybackStopTimer = null;
+    }
+  }
+
+  function playConversationSegment(segment) {
+    const player = qs('#conversation-audio-player');
+    if (!player || !player.getAttribute('src')) {
+      throw new Error('当前会话没有可播放音频');
+    }
+
+    const startSec = Math.max(0, Number(segment.start_ms || 0) / 1000);
+    const endSec = Math.max(startSec, Number(segment.end_ms || 0) / 1000);
+    const startPlayback = () => {
+      player.currentTime = startSec;
+      void player.play().catch(showError);
+      clearConversationPlaybackTimer();
+      conversationPlaybackStopTimer = window.setTimeout(() => {
+        player.pause();
+        player.currentTime = endSec;
+      }, Math.max(200, Math.round((endSec - startSec) * 1000) + 120));
+    };
+
+    if (player.readyState >= 1) {
+      startPlayback();
+      return;
+    }
+
+    const onLoaded = () => {
+      player.removeEventListener('loadedmetadata', onLoaded);
+      startPlayback();
+    };
+    player.addEventListener('loadedmetadata', onLoaded);
+    player.load();
+  }
+
+  async function scanSelectedConversation() {
+    if (!state.selectedConversationId) {
+      throw new Error('请先选择会话');
+    }
+    const result = await apiSend(`/api/admin/conversations/${encodeURIComponent(state.selectedConversationId)}/voiceprint/xfyun/scan`, 'POST', {
+      onlyUnresolved: true,
+      limit: 1000,
+      dryRun: false,
+    });
+    await loadConversationDetail(state.selectedConversationId);
+    await loadConversations(false);
+    window.alert(`扫描完成：自动命中 ${result.data.hit}，低置信 ${result.data.lowConfidence}，冲突 ${result.data.conflict}，未命中 ${result.data.noMatch}，跳过 ${result.data.skipped}，错误 ${result.data.error}`);
+  }
+
+  async function backfillSelectedConversation() {
+    if (!state.selectedConversationId) {
+      throw new Error('请先选择会话');
+    }
+    const result = await apiSend(`/api/admin/conversations/${encodeURIComponent(state.selectedConversationId)}/voiceprint/xfyun/backfill`, 'POST', {
+      onlyUnresolved: true,
+      limit: 1000,
+      dryRun: false,
+    });
+    await loadConversationDetail(state.selectedConversationId);
+    await loadConversations(false);
+    window.alert(`重刷完成：自动命中 ${result.data.hit}，低置信 ${result.data.lowConfidence}，冲突 ${result.data.conflict}，未命中 ${result.data.noMatch}，跳过 ${result.data.skipped}，错误 ${result.data.error}`);
+  }
+
+  async function enrollSelectedConversationSegments(mode) {
+    if (!state.selectedConversationId) {
+      throw new Error('请先选择会话');
+    }
+    const selectedIds = getVoiceprintSelectedIds();
+    if (!selectedIds.length) {
+      throw new Error('请先勾选至少一个片段');
+    }
+
+    const body = {
+      conversationId: state.selectedConversationId,
+      segmentIds: mode === 'exclude' ? [] : selectedIds,
+      speakerMode: qs('#conversation-speaker-mode').value === 'existing' ? 'existing' : 'new',
+      speakerId: qs('#conversation-existing-speaker').value || null,
+      speakerName: qs('#conversation-new-speaker-name').value.trim() || null,
+      identityLabel: qs('#conversation-new-identity').value || null,
+      excludedSegmentIds: mode === 'exclude' ? selectedIds : [],
+    };
+
+    if (mode === 'existing' && !body.speakerId) {
+      throw new Error('请选择已有发言人');
+    }
+    if (mode === 'new' && !body.speakerName) {
+      throw new Error('请输入新发言人姓名');
+    }
+
+    const result = await apiSend('/api/admin/voiceprint/xfyun/enroll-from-segments', 'POST', body);
+    state.voiceprintSelectedSegmentIds.clear();
+    await loadConversationDetail(state.selectedConversationId);
+    await loadConversations(false);
+    await loadSpeakers(false);
+    if (result.data.action === 'exclude_segments') {
+      window.alert(`已排除 ${result.data.excludedSegmentCount} 条片段。`);
+      return;
+    }
+    window.alert(`操作完成：${result.data.createdNewSpeaker ? '新建' : '更新'} speaker ${result.data.speakerId}，处理 ${result.data.processedSegmentCount} 条，排除 ${result.data.excludedSegmentCount} 条。`);
   }
 
   function renderVoiceprintPanel(detail) {
@@ -670,7 +806,17 @@
   function resetConversationDetail() {
     qs('#conversation-empty').classList.remove('hidden');
     qs('#conversation-detail').classList.add('hidden');
-    qs('#conversation-go-voiceprint').disabled = true;
+    const player = qs('#conversation-audio-player');
+    clearConversationPlaybackTimer();
+    if (player) {
+      player.pause();
+      player.removeAttribute('src');
+      player.classList.add('hidden');
+    }
+    qs('#conversation-audio-empty').classList.remove('hidden');
+    state.voiceprintSelectedSegmentIds.clear();
+    qs('#conversation-selected-count').textContent = '0';
+    qs('#conversation-unresolved-count').textContent = '0';
   }
 
   async function loadConversations(resetPage) {
@@ -720,6 +866,8 @@
 
   function renderConversationDetail(detail) {
     const keyword = qs('#conv-keyword').value.trim();
+    const validIds = new Set((detail.segments || []).map((segment) => segment.id));
+    state.voiceprintSelectedSegmentIds = new Set([...state.voiceprintSelectedSegmentIds].filter((segmentId) => validIds.has(segmentId)));
     qs('#conversation-empty').classList.add('hidden');
     qs('#conversation-detail').classList.remove('hidden');
     qs('#conversation-title').textContent = detail.conversation.id;
@@ -731,14 +879,22 @@
     qs('#conversation-segment-count').textContent = detail.conversation.segment_count;
 
     const audioLink = qs('#conversation-audio-link');
+    const audioPlayer = qs('#conversation-audio-player');
+    const audioEmpty = qs('#conversation-audio-empty');
     if (detail.conversation.audio_file_url) {
       audioLink.href = detail.conversation.audio_file_url;
       audioLink.classList.remove('hidden');
+      audioPlayer.src = detail.conversation.audio_file_url;
+      audioPlayer.classList.remove('hidden');
+      audioEmpty.classList.add('hidden');
     } else {
       audioLink.classList.add('hidden');
       audioLink.removeAttribute('href');
+      audioPlayer.pause();
+      audioPlayer.removeAttribute('src');
+      audioPlayer.classList.add('hidden');
+      audioEmpty.classList.remove('hidden');
     }
-    qs('#conversation-go-voiceprint').disabled = false;
 
     qs('#conversation-speakers').innerHTML = detail.speakers.length
       ? detail.speakers.map((speaker) => `
@@ -758,31 +914,54 @@
 
     qs('#conversation-segments').innerHTML = detail.segments.length
       ? detail.segments.map((segment) => {
-        const needsConfirmation = !segment.speaker_name || !segment.speaker_identity;
-        const speakerChanged = (segment.original_speaker_label || '-') !== (segment.speaker_label || '-');
+        const checked = state.voiceprintSelectedSegmentIds.has(segment.id) ? 'checked' : '';
+        const unresolved = !segment.speaker_id;
+        const speakerText = conversationDisplaySpeaker(segment);
         return `
-          <article class="transcript-row ${speakerChanged ? 'changed' : ''}">
+          <article class="transcript-row ${unresolved ? 'unresolved' : ''}" data-conversation-segment-id="${segment.id}">
             <div class="transcript-time">
-              <span>${escapeHtml(formatDate(segment.absolute_start_time))}</span>
-              <span class="subtle">${Math.round(segment.start_ms / 1000)}s - ${Math.round(segment.end_ms / 1000)}s</span>
-            </div>
-            <div class="transcript-speakers">
-              <span class="badge">原始 ${escapeHtml(segment.original_speaker_label || '-')}</span>
-              <span class="badge ${speakerChanged ? 'warning' : ''}">最终 ${escapeHtml(segment.speaker_label || '-')}</span>
+              <label class="voiceprint-check">
+                <input type="checkbox" data-conversation-segment-select ${checked} />
+                <span>${escapeHtml(formatSegmentSeconds(segment.start_ms))} - ${escapeHtml(formatSegmentSeconds(segment.end_ms))}</span>
+              </label>
+              <button type="button" class="inline-action secondary-button" data-play-segment="${segment.id}">试听</button>
             </div>
             <div class="transcript-text">
-              <div class="transcript-display-name subtle">${escapeHtml(segment.display_name || '-')}</div>
+              <div class="transcript-display-name subtle">${escapeHtml(speakerText)}</div>
               <div>${highlightText(segment.text, keyword)}</div>
             </div>
             <div class="transcript-actions">
+              <span class="badge ${unresolved ? 'warning' : ''}">${escapeHtml(segment.speaker_name ? '已实名' : (segment.speaker_label || '未标注'))}</span>
               <span class="badge ${segment.speaker_identity ? '' : 'danger'}">${escapeHtml(segment.speaker_identity || '身份未确认')}</span>
-              ${needsConfirmation && segment.speaker_id ? `<button class="inline-action secondary-button" data-go-speaker="${segment.speaker_id}">去确认</button>` : ''}
+              ${segment.resolution_method ? `<span class="badge">${escapeHtml(voiceprintDecisionLabel(segment.resolution_method))}</span>` : ''}
+              ${segment.speaker_id ? `<button class="inline-action secondary-button" data-go-speaker="${segment.speaker_id}">去确认</button>` : ''}
             </div>
           </article>
         `;
       }).join('')
       : '<p class="subtle">暂无 transcript。</p>';
 
+    qs('#conversation-segments').querySelectorAll('[data-conversation-segment-select]').forEach((node) => {
+      node.addEventListener('change', () => {
+        const row = node.closest('[data-conversation-segment-id]');
+        const segmentId = row?.getAttribute('data-conversation-segment-id');
+        if (!segmentId) return;
+        if (node.checked) {
+          state.voiceprintSelectedSegmentIds.add(segmentId);
+        } else {
+          state.voiceprintSelectedSegmentIds.delete(segmentId);
+        }
+        updateConversationSelectionSummary(detail);
+      });
+    });
+    qs('#conversation-segments').querySelectorAll('[data-play-segment]').forEach((node) => {
+      node.addEventListener('click', () => {
+        const segmentId = node.getAttribute('data-play-segment');
+        const segment = detail.segments.find((item) => item.id === segmentId);
+        if (!segment) return;
+        playConversationSegment(segment);
+      });
+    });
     qs('#conversation-segments').querySelectorAll('[data-go-speaker]').forEach((node) => {
       node.addEventListener('click', () => {
         switchTab('directory');
@@ -790,6 +969,7 @@
         loadSpeakers(false).catch(showError);
       });
     });
+    updateConversationSelectionSummary(detail);
   }
 
   async function loadConversationDetail(conversationId) {
@@ -898,17 +1078,19 @@
       renderVoiceprintPendingList();
       updateVoiceprintSelectionSummary();
     });
-    qs('#conversation-go-voiceprint').addEventListener('click', () => {
-      if (!state.selectedConversationId) {
-        return;
+    qs('#conversation-speaker-mode').addEventListener('change', updateConversationSpeakerModeVisibility);
+    qs('#conversation-enroll-existing').addEventListener('click', () => enrollSelectedConversationSegments('existing').catch(showError));
+    qs('#conversation-enroll-new').addEventListener('click', () => enrollSelectedConversationSegments('new').catch(showError));
+    qs('#conversation-exclude').addEventListener('click', () => enrollSelectedConversationSegments('exclude').catch(showError));
+    qs('#conversation-scan').addEventListener('click', () => scanSelectedConversation().catch(showError));
+    qs('#conversation-backfill').addEventListener('click', () => backfillSelectedConversation().catch(showError));
+    qs('#conversation-clear-selection').addEventListener('click', () => {
+      state.voiceprintSelectedSegmentIds.clear();
+      if (state.selectedConversationId) {
+        loadConversationDetail(state.selectedConversationId).catch(showError);
+      } else {
+        qs('#conversation-selected-count').textContent = '0';
       }
-      state.voiceprintConversationId = state.selectedConversationId;
-      const select = qs('#voiceprint-conversation-select');
-      if (select) {
-        select.value = state.voiceprintConversationId;
-      }
-      switchTab('voiceprint');
-      loadVoiceprintPendingSegments().catch(showError);
     });
   }
 
@@ -928,6 +1110,7 @@
         qs('#voiceprint-conversation-select').value = state.voiceprintConversationId;
       }
     }
+    updateConversationSpeakerModeVisibility();
     updateVoiceprintSpeakerModeVisibility();
     if (state.voiceprintConversationId) {
       loadVoiceprintPendingSegments().catch(showError);

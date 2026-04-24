@@ -32,9 +32,7 @@ export interface SpeakerListFilters {
 }
 
 export interface SpeakerStats {
-  unconfirmedName: number;
-  unconfirmedIdentity: number;
-  unconfirmedAny: number;
+  confirmed: number;
   total: number;
 }
 
@@ -237,25 +235,19 @@ export function getSpeakerStats(): SpeakerStats {
   const row = db.prepare(`
     SELECT
       COUNT(*) AS total,
-      SUM(CASE WHEN name IS NULL OR TRIM(name) = '' THEN 1 ELSE 0 END) AS unconfirmedName,
-      SUM(CASE WHEN identity_label IS NULL OR TRIM(identity_label) = '' THEN 1 ELSE 0 END) AS unconfirmedIdentity,
       SUM(CASE
-        WHEN name IS NULL OR TRIM(name) = '' OR identity_label IS NULL OR TRIM(identity_label) = ''
+        WHEN name IS NOT NULL AND TRIM(name) != '' AND identity_label IS NOT NULL AND TRIM(identity_label) != ''
         THEN 1 ELSE 0
-      END) AS unconfirmedAny
+      END) AS confirmed
     FROM speakers
   `).get() as {
     total?: number;
-    unconfirmedName?: number;
-    unconfirmedIdentity?: number;
-    unconfirmedAny?: number;
+    confirmed?: number;
   };
 
   return {
     total: Number(row?.total || 0),
-    unconfirmedName: Number(row?.unconfirmedName || 0),
-    unconfirmedIdentity: Number(row?.unconfirmedIdentity || 0),
-    unconfirmedAny: Number(row?.unconfirmedAny || 0),
+    confirmed: Number(row?.confirmed || 0),
   };
 }
 
