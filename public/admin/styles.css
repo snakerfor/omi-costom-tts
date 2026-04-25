@@ -779,6 +779,10 @@ button,
   box-shadow: 0 32px 64px rgba(22, 50, 43, 0.18);
 }
 
+.speaker-edit-modal-card {
+  max-width: 860px;
+}
+
 .modal-header {
   display: flex;
   justify-content: space-between;
@@ -857,6 +861,29 @@ button,
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.compact-segment audio {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.section-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.voiceprint-assets-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.voiceprint-assets-grid h4 {
+  margin-bottom: 8px;
 }
 
 .modal-actions {
@@ -1006,6 +1033,10 @@ textarea:focus-visible {
 
   .conversation-workbench-header {
     flex-direction: column;
+  }
+
+  .voiceprint-assets-grid {
+    grid-template-columns: 1fr;
   }
 
   .topbar {

@@ -61,10 +61,40 @@ export interface SpeakerRepresentativeSegment {
   text: string;
 }
 
+export interface SpeakerVoiceprintFeature {
+  id: string;
+  provider: string;
+  group_id: string;
+  feature_id: string;
+  feature_version: number;
+  status: string;
+  source_enrollment_batch_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SpeakerEnrollmentBatch {
+  id: string;
+  provider: string;
+  group_id: string;
+  feature_id: string | null;
+  action: string;
+  status: string;
+  audio_path: string | null;
+  duration_ms: number | null;
+  audio_size_bytes: number | null;
+  error_message: string | null;
+  segment_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SpeakerDetail {
   speaker: SpeakerRow;
   recentConversations: SpeakerRecentConversation[];
   representativeSegments: SpeakerRepresentativeSegment[];
+  voiceprintFeatures: SpeakerVoiceprintFeature[];
+  enrollmentBatches: SpeakerEnrollmentBatch[];
 }
 
 export interface UpdateSpeakerInput {
@@ -294,10 +324,57 @@ export function getSpeakerDetail(speakerId: string): SpeakerDetail {
     LIMIT 5
   `).all(speakerId) as SpeakerRepresentativeSegment[];
 
+  const voiceprintFeatures = db.prepare(`
+    SELECT
+      id,
+      provider,
+      group_id,
+      feature_id,
+      feature_version,
+      status,
+      source_enrollment_batch_id,
+      created_at,
+      updated_at
+    FROM speaker_voiceprint_features
+    WHERE speaker_id = ?
+    ORDER BY
+      CASE WHEN status = 'active' THEN 0 ELSE 1 END,
+      updated_at DESC
+    LIMIT 10
+  `).all(speakerId) as SpeakerVoiceprintFeature[];
+
+  const enrollmentBatches = db.prepare(`
+    SELECT
+      b.id,
+      b.provider,
+      b.group_id,
+      b.feature_id,
+      b.action,
+      b.status,
+      b.audio_path,
+      b.duration_ms,
+      b.audio_size_bytes,
+      b.error_message,
+      COUNT(es.segment_id) AS segment_count,
+      b.created_at,
+      b.updated_at
+    FROM speaker_enrollment_batches b
+    LEFT JOIN speaker_enrollment_segments es ON es.enrollment_batch_id = b.id
+    WHERE b.speaker_id = ?
+    GROUP BY
+      b.id, b.provider, b.group_id, b.feature_id, b.action, b.status,
+      b.audio_path, b.duration_ms, b.audio_size_bytes, b.error_message,
+      b.created_at, b.updated_at
+    ORDER BY b.created_at DESC
+    LIMIT 10
+  `).all(speakerId) as SpeakerEnrollmentBatch[];
+
   return {
     speaker,
     recentConversations,
     representativeSegments,
+    voiceprintFeatures,
+    enrollmentBatches,
   };
 }
 

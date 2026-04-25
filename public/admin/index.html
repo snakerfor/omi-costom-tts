@@ -191,7 +191,6 @@
                   </div>
                   <div class="speaker-detail-actions">
                     <div id="speaker-detail-badges" class="badge-row"></div>
-                    <button id="speaker-edit-toggle" type="button" class="secondary-button">编辑信息</button>
                   </div>
                 </div>
 
@@ -220,28 +219,6 @@
                 </div>
 
                 <div id="speaker-confirm-summary" class="detail-section"></div>
-
-                <form id="speaker-form" class="detail-section form-grid hidden">
-                  <h3>确认信息</h3>
-                  <label>
-                    <span>姓名</span>
-                    <input id="speaker-form-name" type="text" placeholder="例如：张三" />
-                  </label>
-                  <label>
-                    <span>身份</span>
-                    <select id="speaker-form-identity">
-                      <option value="">未确认</option>
-                    </select>
-                  </label>
-                  <label class="full-width">
-                    <span>备注</span>
-                    <textarea id="speaker-form-notes" rows="4" placeholder="补充说明"></textarea>
-                  </label>
-                  <div class="actions full-width">
-                    <button id="speaker-edit-cancel" type="button" class="secondary-button">取消</button>
-                    <button type="submit">保存确认</button>
-                  </div>
-                </form>
               </div>
             </section>
           </div>
@@ -325,6 +302,49 @@
         <div class="modal-actions">
           <button id="conversation-enroll-existing" type="button" class="secondary-button">更新发言人语料</button>
           <button id="conversation-enroll-new" type="button">创建新发言人并注册</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="speaker-edit-modal" class="modal-backdrop hidden">
+      <div class="modal-card speaker-edit-modal-card">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Official Speaker</p>
+            <h2 id="speaker-edit-modal-title">编辑正式发言人</h2>
+          </div>
+          <button id="speaker-edit-modal-close" type="button" class="secondary-button">关闭</button>
+        </div>
+        <div class="modal-body">
+          <form id="speaker-form" class="form-grid">
+            <h3 class="full-width">基础信息</h3>
+            <label>
+              <span>姓名</span>
+              <input id="speaker-form-name" type="text" placeholder="例如：张三" />
+            </label>
+            <label>
+              <span>身份</span>
+              <select id="speaker-form-identity">
+                <option value="">未确认</option>
+              </select>
+            </label>
+            <label class="full-width">
+              <span>备注</span>
+              <textarea id="speaker-form-notes" rows="4" placeholder="补充说明"></textarea>
+            </label>
+          </form>
+
+          <section class="detail-section">
+            <div class="section-title-row">
+              <h3>讯飞声纹语料</h3>
+              <span class="subtle">在“对话记录”中勾选片段后，可更新已有发言人的讯飞语料。</span>
+            </div>
+            <div id="speaker-voiceprint-assets" class="segment-list compact-list"></div>
+          </section>
+        </div>
+        <div class="modal-actions">
+          <button id="speaker-edit-cancel" type="button" class="secondary-button">取消</button>
+          <button id="speaker-edit-save" type="submit" form="speaker-form">保存基础信息</button>
         </div>
       </div>
     </div>

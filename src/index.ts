@@ -498,6 +498,11 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, urlOb
         speaker: enrichSpeaker(detail.speaker),
         recentConversations: detail.recentConversations.map(enrichConversation),
         representativeSegments: detail.representativeSegments,
+        voiceprintFeatures: detail.voiceprintFeatures,
+        enrollmentBatches: detail.enrollmentBatches.map(batch => ({
+          ...batch,
+          audio_url: toMediaUrl(batch.audio_path),
+        })),
       },
     });
     return true;

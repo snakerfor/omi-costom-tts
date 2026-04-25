@@ -6,7 +6,7 @@
     speakers: [],
     speakerPagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 },
     selectedSpeakerId: null,
-    speakerEditMode: false,
+    speakerEditModalOpen: false,
     confirmedSpeakerOptions: [],
     conversations: [],
     conversationPagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 },
@@ -32,17 +32,6 @@
     return date.toLocaleString('zh-CN', { hour12: false });
   }
 
-  function formatDateOnly(value) {
-    if (!value) return '-';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-    return date.toLocaleDateString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    });
-  }
-
   function formatTimeOnly(value) {
     if (!value) return '-';
     const date = new Date(value);
@@ -57,12 +46,11 @@
 
   function formatAbsoluteTimeMeta(startValue, endValue) {
     if (!startValue && !endValue) {
-      return { dateLabel: '-', rangeLabel: '-' };
+      return { rangeLabel: '-' };
     }
     if (!startValue || !endValue) {
       const value = startValue || endValue;
       return {
-        dateLabel: formatDateOnly(value),
         rangeLabel: formatTimeOnly(value),
       };
     }
@@ -70,13 +58,10 @@
     const endDate = new Date(endValue);
     if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
       return {
-        dateLabel: formatDateOnly(startValue),
         rangeLabel: `${formatTimeOnly(startValue)} - ${formatTimeOnly(endValue)}`,
       };
     }
-    const sameDay = startDate.toDateString() === endDate.toDateString();
     return {
-      dateLabel: sameDay ? formatDateOnly(startValue) : `${formatDateOnly(startValue)} - ${formatDateOnly(endValue)}`,
       rangeLabel: `${formatTimeOnly(startValue)} - ${formatTimeOnly(endValue)}`,
     };
   }
@@ -244,6 +229,19 @@
     qs('#speaker-modal').classList.add('hidden');
   }
 
+  async function openSpeakerEditModal(speakerId) {
+    if (!speakerId) return;
+    state.selectedSpeakerId = speakerId;
+    state.speakerEditModalOpen = true;
+    qs('#speaker-edit-modal').classList.remove('hidden');
+    await loadSpeakerDetail(speakerId);
+  }
+
+  function closeSpeakerEditModal() {
+    state.speakerEditModalOpen = false;
+    qs('#speaker-edit-modal').classList.add('hidden');
+  }
+
   async function apiGet(url) {
     const response = await fetch(url);
     const data = await response.json();
@@ -380,10 +378,7 @@
     listEl.querySelectorAll('[data-edit-speaker]').forEach((node) => {
       node.addEventListener('click', (event) => {
         event.stopPropagation();
-        state.selectedSpeakerId = node.getAttribute('data-edit-speaker');
-        state.speakerEditMode = true;
-        renderSpeakerList();
-        loadSpeakerDetail(state.selectedSpeakerId).catch(showError);
+        openSpeakerEditModal(node.getAttribute('data-edit-speaker')).catch(showError);
       });
     });
   }
@@ -391,7 +386,7 @@
   function resetSpeakerDetail() {
     qs('#speaker-empty').classList.remove('hidden');
     qs('#speaker-detail').classList.add('hidden');
-    state.speakerEditMode = false;
+    closeSpeakerEditModal();
   }
 
   async function loadSpeakers(resetPage) {
@@ -444,6 +439,7 @@
     qs('#speaker-form-name').value = detail.speaker.name || '';
     qs('#speaker-form-identity').value = detail.speaker.identity_label || '';
     qs('#speaker-form-notes').value = detail.speaker.notes || '';
+    qs('#speaker-edit-modal-title').textContent = `编辑 ${speakerDisplayName(detail.speaker)}`;
     qs('#speaker-confirm-summary').innerHTML = `
       <div class="speaker-confirm-summary">
         <span><strong>姓名</strong>${escapeHtml(detail.speaker.name || '未确认')}</span>
@@ -451,9 +447,6 @@
         <span><strong>备注</strong>${escapeHtml(detail.speaker.notes || '无')}</span>
       </div>
     `;
-    qs('#speaker-form').classList.toggle('hidden', !state.speakerEditMode);
-    qs('#speaker-confirm-summary').classList.toggle('hidden', state.speakerEditMode);
-    qs('#speaker-edit-toggle').textContent = state.speakerEditMode ? '收起编辑' : '编辑信息';
 
     const audio = qs('#speaker-audio');
     const audioEmpty = qs('#speaker-audio-empty');
@@ -500,6 +493,51 @@
         loadConversations(false).catch(showError);
       });
     });
+
+    renderSpeakerVoiceprintAssets(detail);
+  }
+
+  function renderSpeakerVoiceprintAssets(detail) {
+    const target = qs('#speaker-voiceprint-assets');
+    if (!target) return;
+    const batches = detail.enrollmentBatches || [];
+    const features = detail.voiceprintFeatures || [];
+    const featureHtml = features.length
+      ? features.map((feature) => `
+        <article class="segment-item compact-segment">
+          <div class="segment-title">
+            <span>${escapeHtml(feature.provider)} / ${escapeHtml(feature.feature_id)}</span>
+            <span class="badge ${feature.status === 'active' ? '' : 'warning'}">${escapeHtml(feature.status)}</span>
+          </div>
+          <p class="subtle">版本 ${feature.feature_version}，分组 ${escapeHtml(feature.group_id)}，更新 ${escapeHtml(formatDate(feature.updated_at))}</p>
+        </article>
+      `).join('')
+      : '<p class="subtle">暂无讯飞 active feature。</p>';
+    const batchHtml = batches.length
+      ? batches.map((batch) => `
+        <article class="segment-item compact-segment">
+          <div class="segment-title">
+            <span>${escapeHtml(batch.action)} · ${escapeHtml(formatDate(batch.created_at))}</span>
+            <span class="badge ${batch.status === 'success' ? '' : 'danger'}">${escapeHtml(batch.status)}</span>
+          </div>
+          <p class="subtle">片段 ${batch.segment_count || 0}，时长 ${escapeHtml(formatSegmentSeconds(batch.duration_ms || 0))}，feature ${escapeHtml(batch.feature_id || '-')}</p>
+          ${batch.audio_url ? `<audio controls src="${escapeHtml(batch.audio_url)}"></audio>` : ''}
+          ${batch.error_message ? `<p class="danger-text">${escapeHtml(batch.error_message)}</p>` : ''}
+        </article>
+      `).join('')
+      : '<p class="subtle">暂无注册/更新批次。需要在对话记录里选择片段后更新已有发言人语料。</p>';
+    target.innerHTML = `
+      <div class="voiceprint-assets-grid">
+        <section>
+          <h4>当前 Feature</h4>
+          ${featureHtml}
+        </section>
+        <section>
+          <h4>注册/更新批次</h4>
+          ${batchHtml}
+        </section>
+      </div>
+    `;
   }
 
   async function loadSpeakerDetail(speakerId) {
@@ -705,7 +743,7 @@
             </label>
             <div class="transcript-time">
               <span class="transcript-relative-range">${escapeHtml(formatSegmentClock(segment.start_ms))} - ${escapeHtml(formatSegmentClock(segment.end_ms))}</span>
-              <div class="subtle transcript-absolute-range">${escapeHtml(timeMeta.dateLabel)} ${escapeHtml(timeMeta.rangeLabel)}</div>
+              <div class="subtle transcript-absolute-range">${escapeHtml(timeMeta.rangeLabel)}</div>
             </div>
             <div class="transcript-speaker">
               <strong>${escapeHtml(displaySpeaker)}</strong>
@@ -1050,6 +1088,12 @@
         closeSpeakerModal();
       }
     });
+    qs('#speaker-edit-modal-close').addEventListener('click', () => closeSpeakerEditModal());
+    qs('#speaker-edit-modal').addEventListener('click', (event) => {
+      if (event.target === qs('#speaker-edit-modal')) {
+        closeSpeakerEditModal();
+      }
+    });
     qs('#conversation-speaker-mode').addEventListener('change', updateConversationSpeakerModeVisibility);
     qs('#conversation-enroll-existing').addEventListener('click', () => enrollSelectedConversationSegments().catch(showError));
     qs('#conversation-enroll-new').addEventListener('click', () => enrollSelectedConversationSegments().catch(showError));
@@ -1085,17 +1129,8 @@
       state.speakerPagination.page += 1;
       loadSpeakers(false).catch(showError);
     });
-    qs('#speaker-edit-toggle').addEventListener('click', () => {
-      state.speakerEditMode = !state.speakerEditMode;
-      if (state.selectedSpeakerId) {
-        loadSpeakerDetail(state.selectedSpeakerId).catch(showError);
-      }
-    });
     qs('#speaker-edit-cancel').addEventListener('click', () => {
-      state.speakerEditMode = false;
-      if (state.selectedSpeakerId) {
-        loadSpeakerDetail(state.selectedSpeakerId).catch(showError);
-      }
+      closeSpeakerEditModal();
     });
     qs('#speaker-form').addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -1105,7 +1140,7 @@
         identityLabel: qs('#speaker-form-identity').value || null,
         notes: qs('#speaker-form-notes').value,
       });
-      state.speakerEditMode = false;
+      closeSpeakerEditModal();
       await loadSpeakers(false);
       await loadSpeakerDetail(state.selectedSpeakerId);
       await loadConversations(false);
