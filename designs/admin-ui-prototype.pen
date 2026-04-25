@@ -388,6 +388,57 @@
                               "fill": "#9B6413"
                             }
                           ]
+                        },
+                        {
+                          "id": "cw-stat-confirmed",
+                          "type": "frame",
+                          "padding": [7, 10],
+                          "cornerRadius": 999,
+                          "fill": "#E8F4EE",
+                          "children": [
+                            {
+                              "id": "cw-stat-confirmed-text",
+                              "type": "text",
+                              "content": "已实名 104",
+                              "fontSize": 12,
+                              "fontWeight": "650",
+                              "fill": "#2F7D65"
+                            }
+                          ]
+                        },
+                        {
+                          "id": "cw-stat-missed",
+                          "type": "frame",
+                          "padding": [7, 10],
+                          "cornerRadius": 999,
+                          "fill": "#F1EEE8",
+                          "children": [
+                            {
+                              "id": "cw-stat-missed-text",
+                              "type": "text",
+                              "content": "未命中 21",
+                              "fontSize": 12,
+                              "fontWeight": "650",
+                              "fill": "#665C52"
+                            }
+                          ]
+                        },
+                        {
+                          "id": "cw-stat-error",
+                          "type": "frame",
+                          "padding": [7, 10],
+                          "cornerRadius": 999,
+                          "fill": "#FDECEA",
+                          "children": [
+                            {
+                              "id": "cw-stat-error-text",
+                              "type": "text",
+                              "content": "错误 3",
+                              "fontSize": 12,
+                              "fontWeight": "650",
+                              "fill": "#A9483A"
+                            }
+                          ]
                         }
                       ]
                     }
@@ -494,7 +545,7 @@
                     {
                       "id": "cw-speaker-card-2-title",
                       "type": "text",
-                      "content": "SPEAKER_02",
+                      "content": "李四 / 同事",
                       "fontSize": 13,
                       "fontWeight": "700",
                       "fill": "#22312D"
@@ -502,9 +553,85 @@
                     {
                       "id": "cw-speaker-card-2-meta",
                       "type": "text",
-                      "content": "31 段 · 20.4s · 未命中",
+                      "content": "21 段 · 低置信",
                       "fontSize": 11,
                       "fill": "#60716A"
+                    }
+                  ]
+                },
+                {
+                  "id": "cw-speaker-card-3",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "gap": 4,
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 10,
+                  "padding": 8,
+                  "children": [
+                    {
+                      "id": "cw-speaker-card-3-title",
+                      "type": "text",
+                      "content": "SPEAKER_03",
+                      "fontSize": 13,
+                      "fontWeight": "700",
+                      "fill": "#22312D"
+                    },
+                    {
+                      "id": "cw-speaker-card-3-meta",
+                      "type": "text",
+                      "content": "18 段 · 未命中",
+                      "fontSize": 11,
+                      "fill": "#60716A"
+                    }
+                  ]
+                },
+                {
+                  "id": "cw-speaker-card-4",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "gap": 4,
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 10,
+                  "padding": 8,
+                  "children": [
+                    {
+                      "id": "cw-speaker-card-4-title",
+                      "type": "text",
+                      "content": "SPEAKER_04",
+                      "fontSize": 13,
+                      "fontWeight": "700",
+                      "fill": "#22312D"
+                    },
+                    {
+                      "id": "cw-speaker-card-4-meta",
+                      "type": "text",
+                      "content": "9 段 · 错误",
+                      "fontSize": 11,
+                      "fill": "#A9483A"
+                    }
+                  ]
+                },
+                {
+                  "id": "cw-speaker-more",
+                  "type": "frame",
+                  "width": 48,
+                  "height": "fill_container",
+                  "fill": "#ECE7DF",
+                  "cornerRadius": 10,
+                  "alignItems": "center",
+                  "justifyContent": "center",
+                  "children": [
+                    {
+                      "id": "cw-speaker-more-text",
+                      "type": "text",
+                      "content": "+2",
+                      "fontSize": 13,
+                      "fontWeight": "750",
+                      "fill": "#4F5C57"
                     }
                   ]
                 }
@@ -528,7 +655,7 @@
                   "type": "frame",
                   "layout": "vertical",
                   "gap": 6,
-                  "width": 220,
+                  "width": 150,
                   "children": [
                     {
                       "id": "cw-transcript-title-a",
@@ -552,7 +679,7 @@
                   "type": "frame",
                   "layout": "vertical",
                   "gap": 5,
-                  "width": 146,
+                  "width": 126,
                   "children": [
                     {
                       "id": "cw-transcript-speaker-filter-label",
@@ -585,11 +712,48 @@
                   ]
                 },
                 {
+                  "id": "cw-status-filter",
+                  "type": "frame",
+                  "layout": "vertical",
+                  "gap": 5,
+                  "width": 120,
+                  "children": [
+                    {
+                      "id": "cw-status-filter-label",
+                      "type": "text",
+                      "content": "状态",
+                      "fontSize": 11,
+                      "fill": "#76847D"
+                    },
+                    {
+                      "id": "cw-status-filter-box",
+                      "type": "frame",
+                      "height": 34,
+                      "width": "fill_container",
+                      "fill": "#FFFFFF",
+                      "stroke": { "thickness": 1, "fill": "#DCD5CA" },
+                      "cornerRadius": 10,
+                      "layout": "horizontal",
+                      "alignItems": "center",
+                      "padding": [0, 10],
+                      "children": [
+                        {
+                          "id": "cw-status-filter-text",
+                          "type": "text",
+                          "content": "全部状态",
+                          "fontSize": 12,
+                          "fill": "#22312D"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
                   "id": "cw-hide-short",
                   "type": "frame",
                   "layout": "horizontal",
                   "gap": 7,
-                  "width": 122,
+                  "width": 100,
                   "height": 34,
                   "alignItems": "center",
                   "padding": [0, 4],
@@ -689,7 +853,7 @@
                   "type": "text",
                   "content": "既考验力度。别守着呆冻了。好了，你以为这是啥子的球吗？",
                   "textGrowth": "fixed-width",
-                  "width": 282,
+                  "width": 250,
                   "fontSize": 14,
                   "lineHeight": 1.35,
                   "fill": "#22312D"
@@ -699,7 +863,7 @@
                   "type": "text",
                   "content": "已实名\n正式语料 · 张三",
                   "textGrowth": "fixed-width",
-                  "width": 160,
+                  "width": 125,
                   "fontSize": 12,
                   "lineHeight": 1.45,
                   "fill": "#2F7D65"
@@ -753,7 +917,7 @@
                   "type": "text",
                   "content": "吃完饱了口香糖，它会哭的。",
                   "textGrowth": "fixed-width",
-                  "width": 282,
+                  "width": 250,
                   "fontSize": 14,
                   "lineHeight": 1.35,
                   "fill": "#22312D"
@@ -763,7 +927,7 @@
                   "type": "text",
                   "content": "低置信 0.782 · 李四\n加入李四候选",
                   "textGrowth": "fixed-width",
-                  "width": 160,
+                  "width": 125,
                   "fontSize": 12,
                   "lineHeight": 1.45,
                   "fill": "#9B6413"
@@ -817,7 +981,7 @@
                   "type": "text",
                   "content": "的。",
                   "textGrowth": "fixed-width",
-                  "width": 282,
+                  "width": 250,
                   "fontSize": 14,
                   "fill": "#22312D"
                 },
@@ -826,7 +990,7 @@
                   "type": "text",
                   "content": "片段过短\n不可加入语料",
                   "textGrowth": "fixed-width",
-                  "width": 160,
+                  "width": 125,
                   "fontSize": 12,
                   "lineHeight": 1.45,
                   "fill": "#7B766E"
@@ -1460,15 +1624,57 @@
               "id": "sm-material-columns",
               "type": "frame",
               "width": "fill_container",
-              "height": 356,
-              "layout": "horizontal",
-              "gap": 14,
+              "height": 430,
+              "layout": "vertical",
+              "gap": 12,
               "children": [
+                {
+                  "id": "sm-active",
+                  "type": "frame",
+                  "width": "fill_container",
+                  "height": 204,
+                  "fill": "#F7FBF8",
+                  "stroke": { "thickness": 1, "fill": "#CFE4D6" },
+                  "cornerRadius": 14,
+                  "layout": "vertical",
+                  "gap": 10,
+                  "padding": 14,
+                  "children": [
+                    {
+                      "id": "sm-active-title",
+                      "type": "text",
+                      "content": "正式语料 10     参与下次更新",
+                      "fontSize": 16,
+                      "fontWeight": "800",
+                      "fill": "#1F7A5D"
+                    },
+                    {
+                      "id": "sm-active-item-1",
+                      "type": "text",
+                      "content": "既考验力度。别守着呆冻了。好了。\n18 字 · 6.2s     试听 / 移回候选",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "fontSize": 12,
+                      "lineHeight": 1.5,
+                      "fill": "#22312D"
+                    },
+                    {
+                      "id": "sm-active-item-2",
+                      "type": "text",
+                      "content": "需要把各个场景下的语料拼到一起。\n19 字 · 7.8s     试听 / 删除",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "fontSize": 12,
+                      "lineHeight": 1.5,
+                      "fill": "#22312D"
+                    }
+                  ]
+                },
                 {
                   "id": "sm-candidate",
                   "type": "frame",
                   "width": "fill_container",
-                  "height": "fill_container",
+                  "height": 204,
                   "fill": "#FFFCF6",
                   "stroke": { "thickness": 1, "fill": "#E8D9BA" },
                   "cornerRadius": 14,
@@ -1479,7 +1685,7 @@
                     {
                       "id": "sm-candidate-title",
                       "type": "text",
-                      "content": "候选语料 8     全部转正式",
+                      "content": "候选语料 8     收起 · 全部转正式",
                       "fontSize": 16,
                       "fontWeight": "800",
                       "fill": "#8A5A14"
@@ -1505,48 +1711,6 @@
                       "fill": "#22312D"
                     }
                   ]
-                },
-                {
-                  "id": "sm-active",
-                  "type": "frame",
-                  "width": "fill_container",
-                  "height": "fill_container",
-                  "fill": "#F7FBF8",
-                  "stroke": { "thickness": 1, "fill": "#CFE4D6" },
-                  "cornerRadius": 14,
-                  "layout": "vertical",
-                  "gap": 10,
-                  "padding": 14,
-                  "children": [
-                    {
-                      "id": "sm-active-title",
-                      "type": "text",
-                      "content": "正式语料 10     参与下次更新",
-                      "fontSize": 16,
-                      "fontWeight": "800",
-                      "fill": "#1F7A5D"
-                    },
-                    {
-                      "id": "sm-active-item-1",
-                      "type": "text",
-                      "content": "既考验力度。别守着呆冻了。好了。\n18 字 · 6.2s     试听 / 移回",
-                      "textGrowth": "fixed-width",
-                      "width": "fill_container",
-                      "fontSize": 12,
-                      "lineHeight": 1.5,
-                      "fill": "#22312D"
-                    },
-                    {
-                      "id": "sm-active-item-2",
-                      "type": "text",
-                      "content": "需要把各个场景下的语料拼到一起。\n19 字 · 7.8s     试听 / 删除",
-                      "textGrowth": "fixed-width",
-                      "width": "fill_container",
-                      "fontSize": 12,
-                      "lineHeight": 1.5,
-                      "fill": "#22312D"
-                    }
-                  ]
                 }
               ]
             },
@@ -1554,7 +1718,7 @@
               "id": "sm-history",
               "type": "frame",
               "width": "fill_container",
-              "height": 128,
+              "height": 72,
               "fill": "#FBFAF7",
               "stroke": { "thickness": 1, "fill": "#E6DFD4" },
               "cornerRadius": 14,
@@ -1576,6 +1740,287 @@
                   "content": "04/25 11:31 · 已完成 · 48 个片段                                      查看对话记录",
                   "fontSize": 13,
                   "fill": "#4F5C57"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dv6IU",
+      "type": "frame",
+      "name": "03 Edit Speaker Drawer",
+      "x": 2960,
+      "y": 0,
+      "width": 1440,
+      "height": 1040,
+      "fill": "#F6F3EE",
+      "layout": "none",
+      "children": [
+        {
+          "id": "edit-bg-topbar",
+          "type": "frame",
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 72,
+          "fill": "#182E2A",
+          "children": [
+            {
+              "id": "edit-bg-title",
+              "type": "text",
+              "x": 28,
+              "y": 22,
+              "content": "正式发言人",
+              "fontSize": 22,
+              "fontWeight": "750",
+              "fill": "#FFFFFF"
+            }
+          ]
+        },
+        {
+          "id": "edit-bg-panel",
+          "type": "frame",
+          "x": 358,
+          "y": 96,
+          "width": 1058,
+          "height": 904,
+          "fill": "#FFFFFF",
+          "stroke": { "thickness": 1, "fill": "#E3DED5" },
+          "cornerRadius": 18,
+          "children": [
+            {
+              "id": "edit-bg-panel-text",
+              "type": "text",
+              "x": 28,
+              "y": 28,
+              "content": "张三 / 本人\n基础信息 · 声纹语料管理 · 最近会话",
+              "fontSize": 18,
+              "lineHeight": 1.5,
+              "fontWeight": "750",
+              "fill": "#1E2B28"
+            }
+          ]
+        },
+        {
+          "id": "edit-overlay",
+          "type": "frame",
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 1040,
+          "fill": "#182E2A66"
+        },
+        {
+          "id": "edit-drawer",
+          "type": "frame",
+          "name": "Edit Speaker Drawer",
+          "x": 940,
+          "y": 0,
+          "width": 500,
+          "height": 1040,
+          "fill": "#FFFEFB",
+          "stroke": { "thickness": { "left": 1 }, "fill": "#DCD5CA" },
+          "layout": "vertical",
+          "gap": 18,
+          "padding": 28,
+          "children": [
+            {
+              "id": "edit-title",
+              "type": "text",
+              "content": "编辑基础信息",
+              "fontSize": 24,
+              "fontWeight": "800",
+              "fill": "#1E2B28"
+            },
+            {
+              "id": "edit-note",
+              "type": "text",
+              "content": "只修改正式发言人的姓名、身份、备注和扩展资料；声纹语料在详情页单独管理。",
+              "textGrowth": "fixed-width",
+              "width": "fill_container",
+              "fontSize": 13,
+              "lineHeight": 1.5,
+              "fill": "#60716A"
+            },
+            {
+              "id": "edit-name-field",
+              "type": "frame",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "id": "edit-name-label",
+                  "type": "text",
+                  "content": "姓名",
+                  "fontSize": 12,
+                  "fontWeight": "700",
+                  "fill": "#4F5C57"
+                },
+                {
+                  "id": "edit-name-input",
+                  "type": "frame",
+                  "height": 44,
+                  "fill": "#FFFFFF",
+                  "stroke": { "thickness": 1, "fill": "#DCD5CA" },
+                  "cornerRadius": 12,
+                  "padding": [0, 14],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "id": "edit-name-value",
+                      "type": "text",
+                      "content": "张三",
+                      "fontSize": 14,
+                      "fill": "#22312D"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "edit-identity-field",
+              "type": "frame",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "id": "edit-identity-label",
+                  "type": "text",
+                  "content": "身份",
+                  "fontSize": 12,
+                  "fontWeight": "700",
+                  "fill": "#4F5C57"
+                },
+                {
+                  "id": "edit-identity-input",
+                  "type": "frame",
+                  "height": 44,
+                  "fill": "#FFFFFF",
+                  "stroke": { "thickness": 1, "fill": "#DCD5CA" },
+                  "cornerRadius": 12,
+                  "padding": [0, 14],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "id": "edit-identity-value",
+                      "type": "text",
+                      "content": "本人",
+                      "fontSize": 14,
+                      "fill": "#22312D"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "edit-remark-field",
+              "type": "frame",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 8,
+              "children": [
+                {
+                  "id": "edit-remark-label",
+                  "type": "text",
+                  "content": "备注",
+                  "fontSize": 12,
+                  "fontWeight": "700",
+                  "fill": "#4F5C57"
+                },
+                {
+                  "id": "edit-remark-input",
+                  "type": "frame",
+                  "height": 92,
+                  "fill": "#FFFFFF",
+                  "stroke": { "thickness": 1, "fill": "#DCD5CA" },
+                  "cornerRadius": 12,
+                  "padding": 14,
+                  "children": [
+                    {
+                      "id": "edit-remark-value",
+                      "type": "text",
+                      "content": "数据拥有者，优先保证会议和电话场景识别。",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "fontSize": 14,
+                      "lineHeight": 1.5,
+                      "fill": "#22312D"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "edit-extension",
+              "type": "frame",
+              "width": "fill_container",
+              "height": 96,
+              "fill": "#F8F6F2",
+              "stroke": { "thickness": 1, "fill": "#E6DFD4" },
+              "cornerRadius": 14,
+              "padding": 14,
+              "children": [
+                {
+                  "id": "edit-extension-text",
+                  "type": "text",
+                  "content": "扩展信息预留区\n后续可加入关系、来源、标签、优先级等字段。",
+                  "fontSize": 13,
+                  "lineHeight": 1.5,
+                  "fill": "#60716A"
+                }
+              ]
+            },
+            {
+              "id": "edit-actions",
+              "type": "frame",
+              "width": "fill_container",
+              "height": 48,
+              "layout": "horizontal",
+              "gap": 12,
+              "children": [
+                {
+                  "id": "edit-cancel",
+                  "type": "frame",
+                  "width": "fill_container",
+                  "height": 48,
+                  "cornerRadius": 14,
+                  "fill": "#EEE9E0",
+                  "alignItems": "center",
+                  "justifyContent": "center",
+                  "children": [
+                    {
+                      "id": "edit-cancel-text",
+                      "type": "text",
+                      "content": "取消",
+                      "fontSize": 14,
+                      "fontWeight": "750",
+                      "fill": "#4F5C57"
+                    }
+                  ]
+                },
+                {
+                  "id": "edit-save",
+                  "type": "frame",
+                  "width": "fill_container",
+                  "height": 48,
+                  "cornerRadius": 14,
+                  "fill": "#2F7D65",
+                  "alignItems": "center",
+                  "justifyContent": "center",
+                  "children": [
+                    {
+                      "id": "edit-save-text",
+                      "type": "text",
+                      "content": "保存基础信息",
+                      "fontSize": 14,
+                      "fontWeight": "750",
+                      "fill": "#FFFFFF"
+                    }
+                  ]
                 }
               ]
             }
