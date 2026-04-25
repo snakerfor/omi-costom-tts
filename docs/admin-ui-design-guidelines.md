@@ -1,223 +1,223 @@
-# Admin UI Design Guidelines
+# 后台管理 UI 设计指导
 
-## Purpose
+## 目的
 
-The admin UI is not a demo page. It is a production review workspace for transcript verification, speaker identity review, and XFYUN voiceprint material management.
+后台管理 UI 不是 demo 页面，而是一个用于转录核对、发言人身份审核、讯飞声纹语料管理的生产级工作台。
 
-The core jobs are:
+核心任务包括：
 
-- Review full conversations efficiently.
-- Understand speaker recognition status at the segment level.
-- Add useful audio segments into a speaker's local candidate material pool.
-- Curate candidate and active voiceprint materials for each official speaker.
-- Update the XFYUN voiceprint feature only after explicit review.
-- Inspect current data quality, recognition confidence, and update history.
+- 高效核对完整对话。
+- 在片段级别理解发言人识别状态。
+- 将有价值的音频片段加入某个发言人的本地候选语料池。
+- 为每个正式发言人维护候选语料和正式语料。
+- 只在人工确认后更新讯飞声纹 feature。
+- 检查当前数据质量、识别置信度和语料更新历史。
 
-The UI should be optimized for repeated operational use, not one-off debugging.
+UI 应该面向长期、重复的运营使用，而不是一次性调试。
 
-## Product Positioning
+## 产品定位
 
-The admin platform should feel like a focused data-review product:
+后台平台应该是一个聚焦的数据核对产品：
 
-- Dense enough for PC-based review.
-- Clear enough to audit a long transcript without visual fatigue.
-- Reliable enough that user actions have obvious consequences.
-- Explicit about what is local-only versus what calls XFYUN.
-- Designed around the user's workflow, not around the database tables.
+- 信息密度足够高，适合 PC 端长时间审核。
+- 能清晰核对长 transcript，不造成视觉疲劳。
+- 用户操作后结果明确、可理解、可追踪。
+- 明确区分本地操作和调用讯飞的操作。
+- 围绕用户工作流设计，而不是围绕数据库表设计。
 
-Primary modules:
+主要模块：
 
-- Conversation review workspace.
-- Official speaker directory.
-- Voiceprint material management.
-- System tools and memory inspection.
+- 对话核对工作台。
+- 正式发言人目录。
+- 声纹语料管理。
+- 系统工具和记忆检查。
 
-## Global UX Principles
+## 全局 UX 原则
 
-- Keep information compact. Avoid large vertical cards for data rows.
-- Avoid duplicate controls. One function should have one clear primary entry.
-- Prefer persistent toolbars for batch actions.
-- Separate recognition status from voiceprint material status.
-- Avoid hiding critical status inside chips mixed with body text.
-- Speaker name and identity are first-class information.
-- Actions that call XFYUN must be visually and semantically distinct from local-only actions.
-- Default views should show complete data unless filtering is explicitly enabled.
-- Do not create fake edit controls for operations that do not update the underlying data.
-- When the user can make a destructive or expensive change, show budget/status before the action.
+- 信息保持紧凑，避免每条数据都做成很高的大卡片。
+- 避免重复控件，一个功能只保留一个清晰入口。
+- 批量操作尽量使用固定工具栏或明确的操作区。
+- 识别状态和声纹语料状态必须分开。
+- 不要把重要状态藏在正文旁边的小 chip 里。
+- 发言人姓名和身份是一级信息，不能弱化。
+- 调用讯飞的操作必须和本地操作有明显视觉和语义区分。
+- 默认视图应展示完整数据，除非用户显式打开筛选。
+- 不要创建看起来能编辑、但实际上不更新真实数据源的假控件。
+- 当用户可能执行破坏性操作或高成本操作时，必须先展示预算和状态。
 
-## Visual Direction
+## 视觉方向
 
-The UI should move away from the current demo-like style:
+UI 需要摆脱当前 demo 风格：
 
-- Avoid oversized rounded cards for every row.
-- Avoid excessive green backgrounds and repeated pill buttons.
-- Use neutral surfaces, subtle borders, restrained status colors, and clear hierarchy.
-- Use compact row layouts for transcript and speaker lists.
-- Use more horizontal space on desktop.
-- Use typography and spacing to make the page feel like a professional review tool.
+- 避免每一行都是超大圆角卡片。
+- 避免整页大量绿色背景和重复 pill 按钮。
+- 使用中性色表面、轻边框、克制的状态色和明确的信息层级。
+- Transcript 和发言人列表使用紧凑行布局。
+- PC 端充分利用横向空间。
+- 通过字号、字重、间距塑造专业核对工具的感觉。
 
-Recommended visual traits:
+推荐视觉特征：
 
-- Background: neutral warm gray or off-white.
-- Surfaces: white or near-white panels with thin borders.
-- Radius: moderate, not oversized.
-- Shadow: very subtle, only for major containers or sticky panels.
-- Status colors:
-  - Confirmed: green.
-  - Low confidence: amber.
-  - No match / neutral unresolved: gray.
-  - Error: red.
-  - Too short: muted gray.
-- Buttons:
-  - One primary action per section.
-  - Secondary actions should be outline or ghost style.
-  - Row actions should be compact.
+- 背景：中性暖灰或偏白。
+- 面板：白色或接近白色，使用细边框。
+- 圆角：中等，不要过大。
+- 阴影：非常克制，只用于主要容器或 sticky 区域。
+- 状态颜色：
+  - 已确认/已实名：绿色。
+  - 低置信：琥珀色。
+  - 未命中/中性未处理：灰色。
+  - 错误：红色。
+  - 片段过短：弱化灰色。
+- 按钮：
+  - 每个区域只保留一个主按钮。
+  - 次要操作使用 outline 或 ghost 样式。
+  - 行内操作必须紧凑。
 
-## Conversation Review Workspace
+## 对话核对工作台
 
-### Goal
+### 目标
 
-The conversation page is for reviewing transcript segments, comparing text with audio, inspecting speaker status, and adding selected segments into a speaker's candidate voiceprint material pool.
+对话页面用于核对 transcript 片段、对照文字和音频、检查发言人状态，并将选中的片段加入某个发言人的候选声纹语料池。
 
-It should not be a general CRUD page.
+它不应该是一个普通 CRUD 页面。
 
-### Layout
+### 布局
 
-Recommended structure:
+推荐结构：
 
-- Left: conversation list and filters.
-- Main: selected conversation detail and transcript.
-- Top of detail: conversation metadata and one embedded audio player.
-- Transcript toolbar: speaker filter, short-segment filter, pagination, candidate-material batch action.
-- Transcript rows: compact row layout.
+- 左侧：会话列表和筛选条件。
+- 主区域：当前会话详情和 transcript。
+- 详情顶部：会话元信息和一个内嵌完整音频播放器。
+- Transcript 工具栏：发言人筛选、过短片段筛选、分页、候选语料批量操作。
+- Transcript 行：紧凑行布局。
 
-Avoid:
+避免：
 
-- A separate "open full audio" link when an embedded full audio player exists.
-- Large transcript cards that make a long conversation hard to scan.
-- Controls squeezed into the corner without labels.
+- 已经有内嵌完整音频播放器时，再提供“打开整场音频”链接。
+- Transcript 使用很高的大卡片，导致长对话难以浏览。
+- 控件挤在角落且没有明确标签。
 
-### Conversation Filters
+### 会话筛选
 
-Useful filters:
+有价值的筛选：
 
-- Keyword search across transcript text.
-- Speaker identity filter.
-- Status filter: recording, completed, failed.
-- Time range.
+- Transcript 文本关键词搜索。
+- 发言人身份筛选。
+- 状态筛选：录音中、已完成、失败。
+- 时间范围。
 
-Less useful or removed filters:
+弱化或移除的筛选：
 
-- "Only unconfirmed speakers" as a primary filter. Unconfirmed speakers can legitimately remain long-term.
-- Speaker name/Soniox label as the main search field. Keyword search across transcript content is more useful.
+- “仅未确认发言人”不应作为主要筛选。未确认发言人可能长期合理存在。
+- 不应把发言人姓名/Soniox 标签作为主要搜索框。按 transcript 内容搜索更符合使用场景。
 
-Page size should be placed in a proper paging area, not mixed awkwardly into the main filter area.
+分页条数应放在合理的分页区域，不要混在主筛选区里。
 
-### Conversation List
+### 会话列表
 
-Conversation list items should be concise:
+会话列表项应保持简洁：
 
-- Start time.
-- Status.
-- Speaker count.
-- Segment count.
-- Short text preview.
+- 开始时间。
+- 状态。
+- 发言人数。
+- 片段数。
+- 短文本预览。
 
-Preview text should be limited. A long preview makes the list hard to use.
+预览文本必须限制长度。过长预览会降低列表可用性。
 
-### Transcript Row Information
+### Transcript 行信息
 
-Each transcript row should show:
+每个 transcript 行应展示：
 
-- Selection checkbox.
-- Relative audio time, aligned with the embedded player.
-- Absolute time as time-of-day only, not repeated full date.
-- Speaker display name.
-- Speaker identity or source label.
-- Transcript text.
-- Recognition status.
-- Voiceprint material status, if already used.
-- Compact row actions.
+- 选择框。
+- 录音相对时间，与内嵌播放器一致。
+- 绝对时间只显示当天时分秒，不重复完整日期。
+- 发言人显示名。
+- 发言人身份或来源标签。
+- Transcript 文本。
+- 识别状态。
+- 已用作声纹语料时的语料状态。
+- 紧凑行内操作。
 
-Do not show the full date in every row. The conversation-level date is already available at the top.
+不要在每一行重复展示完整日期。会话级日期已经在顶部展示。
 
-### Transcript Recognition Status
+### Transcript 识别状态
 
-Transcript recognition status should be limited to five meaningful states:
+Transcript 识别状态只保留五类有意义状态：
 
-- `已实名`: segment is bound to an official speaker.
-- `低置信`: XFYUN returned a top speaker match, but the score is below the auto-confirm threshold.
-- `未命中`: XFYUN did not match an existing voiceprint feature.
-- `识别错误`: XFYUN call failed, audio was invalid, or another voiceprint error occurred.
-- `片段过短`: segment is below the current voiceprint query/enrollment threshold.
+- `已实名`：片段已经绑定到正式发言人。
+- `低置信`：讯飞返回了最高分命中发言人，但分数低于自动确认阈值。
+- `未命中`：讯飞没有命中已有声纹 feature。
+- `识别错误`：讯飞调用失败、音频无效或其他声纹错误。
+- `片段过短`：片段低于当前声纹查询/入库阈值。
 
-Avoid using these as standalone transcript states:
+避免将以下词作为独立 transcript 状态：
 
-- `待确认`.
-- `未识别`.
-- `未实名`.
-- `人工排除`.
+- `待确认`。
+- `未识别`。
+- `未实名`。
+- `人工排除`。
 
-Those labels are either old UI wording, derived conditions, or material-management concepts. They should not be treated as primary transcript recognition states.
+这些要么是旧 UI 文案，要么是派生条件，要么属于语料管理概念，不应作为 transcript 主状态。
 
-### Low Confidence Display
+### 低置信展示
 
-Low confidence must explain which speaker XFYUN nearly matched.
+低置信必须解释讯飞接近匹配到了哪个发言人。
 
-Display format:
+展示格式：
 
 ```text
 低置信 0.823 · 张三 / 本人
 ```
 
-Rules:
+规则：
 
-- Show the top score.
-- Show the top matched speaker name.
-- Show identity when available.
-- Do not use the word "候选" to describe this recognition result.
-- Do not show second-choice speaker in the normal row UI.
-- If no speaker is available, show only the score.
+- 展示最高分。
+- 展示最高分命中的发言人姓名。
+- 有身份时展示身份。
+- 不用“候选”这个词描述识别结果。
+- 正常行 UI 不展示次选发言人。
+- 如果没有发言人信息，只展示分数。
 
-### Short Segment Filter
+### 过短片段筛选
 
-Add a transcript filter:
+Transcript 增加筛选：
 
 ```text
 [ ] 隐藏过短片段
 ```
 
-Rules:
+规则：
 
-- Default is off.
-- The full transcript should be visible by default because current short-segment classification may still need review.
-- When enabled, rows with `片段过短` are hidden.
-- The filter helps both transcript reading and material selection.
-- Even when visible, too-short segments cannot be added to voiceprint materials.
-- Backend validation must also reject too-short material additions.
+- 默认关闭。
+- 默认展示完整 transcript，因为当前过短片段判定规则仍可能需要审核。
+- 开启后隐藏 `片段过短` 行。
+- 该筛选同时服务 transcript 阅读和语料选择。
+- 即使过短片段可见，也不能加入声纹语料。
+- 后端也必须拒绝过短片段加入语料，不能只依赖前端。
 
-### Transcript Material Marker
+### Transcript 语料标识
 
-Each transcript row should show whether it is already used as voiceprint material:
+每条 transcript 行应显示是否已经被用作声纹语料：
 
 ```text
 候选语料 · 张三
 正式语料 · 张三
 ```
 
-Rules:
+规则：
 
-- This marker is separate from recognition status.
-- It indicates local material-pool usage, not XFYUN recognition status.
-- If a row has a material marker, it cannot be added again from the transcript page.
-- The transcript page must not provide a "move material" action.
-- To reuse the segment for another speaker, the user must first remove it from the current speaker's material pool on the official speaker page.
+- 该标识和识别状态分开。
+- 它表示本地语料池使用状态，不表示讯飞识别状态。
+- 如果一行已有语料标识，不能再从 transcript 页面重复加入。
+- Transcript 页面不提供“移动语料”操作。
+- 如果要把该片段用于其他发言人，必须先到当前发言人的语料管理区移除。
 
-### Transcript Batch Material Action
+### Transcript 批量加入候选语料
 
-The transcript page should support batch adding selected segments into candidate materials.
+Transcript 页面支持将选中的片段批量加入候选语料。
 
-The toolbar should support two target modes:
+工具栏支持两种目标模式：
 
 ```text
 目标模式:
@@ -225,60 +225,60 @@ The toolbar should support two target modes:
 ( ) 新建发言人
 ```
 
-Existing speaker mode:
+更新已有发言人：
 
 ```text
 选择正式发言人 [select]
 [加入候选语料]
 ```
 
-New speaker mode:
+新建发言人：
 
 ```text
 姓名 [input]
-身份 [select, includes 本人]
+身份 [select，包含 本人]
 备注 [optional]
 [创建发言人并加入候选语料]
 ```
 
-Rules:
+规则：
 
-- Adding candidate material is local-only.
-- It must not call XFYUN.
-- The user can select any segment that is not too short and not already used as material.
-- This includes recognized, low-confidence, no-match, and error segments.
-- If any selected segment is too short, reject or clearly skip with a count. Prefer reject so the user knows the operation did not fully apply.
-- If any selected segment is already used as material, reject and explain that it must be removed from the speaker material page first.
-- Creating a speaker from transcript creates a local official speaker plus candidate materials only. It does not register to XFYUN.
+- 加入候选语料是本地操作。
+- 不调用讯飞。
+- 用户可以选择任意非过短、且尚未被用作语料的片段。
+- 包括已实名、低置信、未命中、识别错误片段。
+- 如果选中片段包含过短片段，应拒绝或明确提示跳过数量。推荐拒绝，避免用户误以为全部成功。
+- 如果选中片段已经被用作语料，应拒绝并提示需要先到发言人语料管理页移除。
+- 从 transcript 新建发言人时，只创建本地正式发言人和候选语料，不注册到讯飞。
 
-### Low Confidence Quick Action
+### 低置信快捷操作
 
-Low-confidence rows may show a compact quick action:
+低置信行可以展示紧凑快捷操作：
 
 ```text
 加入张三候选语料
 ```
 
-Rules:
+规则：
 
-- Show only when the row has a top matched speaker.
-- Show only when the segment is not already used as material.
-- Show only when the segment is not too short.
-- The action adds the segment to that top matched speaker's candidate materials.
-- It is local-only and does not call XFYUN.
-- It does not prevent the same row from being selected and added to a different speaker through batch mode, as long as it has not already been added as material.
+- 仅当该行有最高分命中的发言人时显示。
+- 仅当该片段尚未被用作语料时显示。
+- 仅当该片段不是过短片段时显示。
+- 操作会把该片段加入最高分命中发言人的候选语料。
+- 这是本地操作，不调用讯飞。
+- 只要片段尚未被加入语料，仍可通过批量模式加入其他发言人。
 
-## Official Speaker Directory
+## 正式发言人目录
 
-### Goal
+### 目标
 
-The official speaker page is for managing speaker profiles, voiceprint materials, and recent conversations.
+正式发言人页用于管理发言人档案、声纹语料和最近会话。
 
-It is not only for editing names and identities.
+它不只是编辑姓名和身份的表单页。
 
-### Layout
+### 布局
 
-Recommended right-side detail structure:
+推荐右侧详情结构：
 
 ```text
 基础信息
@@ -286,135 +286,135 @@ Recommended right-side detail structure:
 最近会话
 ```
 
-The left speaker list should be compact:
+左侧发言人列表应保持紧凑：
 
-- One row per speaker.
-- Name.
-- Identity.
-- Last seen.
-- Compact edit button.
+- 每个发言人一行。
+- 姓名。
+- 身份。
+- 最近出现时间。
+- 紧凑编辑按钮。
 
-Avoid large cards for speakers. The list must scale to 10 to 20 speakers without becoming awkward.
+避免使用大卡片展示发言人。列表必须能自然承载 10 到 20 个正式发言人。
 
-### Speaker Basic Information
+### 发言人基础信息
 
-Basic information should appear near the top of the detail panel:
+基础信息应放在详情面板顶部：
 
-- Name.
-- Identity.
-- Notes.
-- First seen.
-- Last seen.
-- Conversation count.
-- Segment count.
+- 姓名。
+- 身份。
+- 备注。
+- 首次出现。
+- 最近出现。
+- 会话数。
+- 片段数。
 
-Editing basic information should use a modal or clear edit surface, not an inline page mutation that shifts the detail layout.
+基础信息编辑应使用弹窗或明确的编辑区域，不要在详情页内直接切换状态导致布局跳动。
 
-Expected fields now:
+当前字段：
 
-- Name.
-- Identity.
-- Notes.
+- 姓名。
+- 身份。
+- 备注。
 
-Allow future extension fields.
+需要允许未来扩展更多字段。
 
-Identity options must include:
+身份选项必须包含：
 
-- `本人`: the device owner / data owner / person who ultimately uses the data.
+- `本人`：设备拥有者、数据拥有者、最终使用这些数据的人。
 
-### Recent Conversations
+### 最近会话
 
-Show recent 5 conversations.
+最近会话展示最近 5 条即可。
 
-Each item should be compact:
+每条保持紧凑：
 
-- Conversation time.
-- Status.
-- Segment count.
-- Link to open the conversation detail.
+- 会话时间。
+- 状态。
+- 片段数。
+- 打开对话详情的入口。
 
-Do not duplicate representative segments here. Recent conversations are enough for context navigation.
+不再默认展示代表性片段。最近会话已经足够用于上下文跳转。
 
-## Voiceprint Material Management
+## 声纹语料管理
 
-### Goal
+### 目标
 
-Voiceprint materials are local curated audio/text segments used to update XFYUN speaker features.
+声纹语料是本地维护的音频/文本片段，用于更新讯飞发言人 feature。
 
-This is the most important part of long-term speaker recognition quality.
+这是长期提升发言人识别质量最重要的区域。
 
-The UI should make it easy to:
+UI 应该方便用户：
 
-- See candidate and active materials.
-- Listen to material audio.
-- Promote candidate to active.
-- Move active back to candidate.
-- Delete material.
-- Watch total budget and active budget.
-- Save and update XFYUN only when ready.
+- 查看候选语料和正式语料。
+- 试听语料音频。
+- 将候选语料转为正式语料。
+- 将正式语料移回候选。
+- 删除语料。
+- 查看总预算和正式语料预算。
+- 在确认无误后保存并更新讯飞。
 
-### Placement
+### 放置位置
 
-Voiceprint material management belongs in the official speaker detail page, between basic information and recent conversations.
+声纹语料管理属于正式发言人详情页，位置在基础信息和最近会话之间。
 
-It should not be hidden inside the basic-info edit modal.
+它不应该被藏在基础信息编辑弹窗里。
 
-### Material Status
+### 语料状态
 
-Use only two active statuses:
+只使用两个有效状态：
 
-- `candidate`: local candidate material, not used for the next XFYUN update until promoted.
-- `active`: official local material used when saving and updating XFYUN.
+- `candidate`：本地候选语料。除非转正式，否则不会参与下一次讯飞更新。
+- `active`：本地正式语料。保存并更新讯飞时会被使用。
 
-Do not use:
+不使用：
 
-- `excluded`.
-- Historical excluded.
-- Soft delete.
+- `excluded`。
+- 历史已排除。
+- 软删除。
 
-Deletion means deletion from the material pool.
+删除就是从语料池删除。
 
-### Material Ownership
+### 语料归属
 
-One transcript segment can belong to only one speaker's material pool at a time.
+一个 transcript segment 同一时间只能属于一个发言人的语料池。
 
-Database-level rule:
+数据库约束：
 
 ```text
 UNIQUE(segment_id)
 ```
 
-Implications:
+含义：
 
-- The same segment cannot be candidate for one speaker and active for another.
-- The same segment cannot be in two candidate pools.
-- To move a segment to another speaker, remove it from the current speaker's materials first, then add it again from transcript.
-- Transcript should display the current material owner so the user understands why it is not selectable.
+- 同一片段不能同时是一个发言人的候选语料、另一个发言人的正式语料。
+- 同一片段不能同时进入多个候选语料池。
+- 如果要把片段改给另一个发言人，必须先从当前发言人的语料池移除，再从 transcript 重新加入。
+- Transcript 行需要展示当前语料归属，让用户理解为什么该片段不可再选。
 
-### Material Row Display
+### 语料行展示
 
-Each material row should be compact and show only necessary information:
+每条语料行保持紧凑，只展示必要信息：
 
-- Text content.
-- Text length.
-- Audio duration.
-- Listen button.
-- Status: candidate or active.
+- 文本内容。
+- 文本长度。
+- 音频时长。
+- 试听按钮。
+- 状态：候选或正式。
 
-Do not show by default:
+默认不展示：
 
-- Source conversation ID.
-- Absolute timestamp.
-- Per-row file size.
-- Complex debugging metadata.
+- 来源会话 ID。
+- 绝对时间。
+- 单条文件大小。
+- 复杂调试元数据。
 
-Those may be added later behind an expand/debug control if needed, but not in the primary review UI.
+如果后续确实需要，这些信息可以放在展开/调试区域，但不应出现在主审核界面。
 
-### Material Budget
+### 语料预算
 
-The material section needs a budget header.
+语料区域顶部需要预算栏。
 
-Display:
+展示格式：
 
 ```text
 总计: 18 段 · 96.4s · 约 2.9MB / 4MB
@@ -422,85 +422,85 @@ Display:
 候选: 8 段 · 35.2s · 约 1.1MB
 ```
 
-Rules:
+规则：
 
-- Total = candidate + active.
-- Active = active only.
-- Candidate = candidate only.
-- XFYUN update uses active only.
-- If active exceeds 4MB, disable "save and update XFYUN".
-- If active + candidate exceeds 4MB, warn that not all candidate materials can be promoted at once.
-- If active + candidate is within 4MB, "promote all candidates" is safe.
-- Budget should refresh after promote, demote, delete, and add operations.
+- 总计 = candidate + active。
+- 正式 = active。
+- 候选 = candidate。
+- 更新讯飞只使用 active。
+- 如果 active 超过 4MB，禁用“保存并更新讯飞”。
+- 如果 active + candidate 超过 4MB，提示不是所有候选都能一次转正式。
+- 如果 active + candidate 未超过 4MB，可以安全执行“全部候选转正式”。
+- 预算在转正式、移回候选、删除、加入语料后都需要刷新。
 
-Estimated size can be derived from segment duration and audio encoding when exact clip size is not available. The UI should label it as approximate if estimated.
+如果没有真实切片文件大小，可以根据片段时长和音频编码估算。UI 应标注“约”或“估算”。
 
-### Material Operations
+### 语料操作
 
-Candidate material operations:
+候选语料操作：
 
-- Promote to active.
-- Delete.
-- Listen.
+- 转正式。
+- 删除。
+- 试听。
 
-Active material operations:
+正式语料操作：
 
-- Move back to candidate.
-- Delete.
-- Listen.
+- 移回候选。
+- 删除。
+- 试听。
 
-Batch operations:
+批量操作：
 
-- Promote all candidates to active.
-- Save and update XFYUN.
+- 全部候选转正式。
+- 保存并更新讯飞。
 
-Rules:
+规则：
 
-- Promote, demote, and delete are local database operations.
-- They must not call XFYUN.
-- Save and update XFYUN is the only material action that calls XFYUN.
-- The UI should clearly indicate local changes are not pushed to XFYUN until saved.
+- 转正式、移回候选、删除都是本地数据库操作。
+- 这些操作不能调用讯飞。
+- 只有“保存并更新讯飞”会调用讯飞。
+- UI 必须明确提示：本地语料调整不会立即同步到讯飞。
 
-### Save and Update XFYUN
+### 保存并更新讯飞
 
-Save flow:
+保存流程：
 
-1. Read active materials for the speaker.
-2. Validate active is not empty.
-3. Prepare/concatenate active audio.
-4. Validate concatenated audio is below XFYUN 4MB payload limit.
-5. If an active feature exists, call `updateFeature`.
-6. If no feature exists, call `createFeature`.
-7. Write `speaker_enrollment_batches`.
-8. Keep local active materials.
-9. On failure, keep local material state unchanged and show the error.
+1. 读取该发言人的 active 语料。
+2. 校验 active 不能为空。
+3. 准备并拼接 active 音频。
+4. 校验拼接后的音频不超过讯飞 4MB payload 限制。
+5. 如果已有 active feature，调用 `updateFeature`。
+6. 如果没有 feature，调用 `createFeature`。
+7. 写入 `speaker_enrollment_batches`。
+8. 保留本地 active 语料。
+9. 如果失败，保持本地语料状态不变，并展示错误。
 
-The button should communicate cost and impact:
+按钮文案需要体现影响范围：
 
 ```text
 保存并更新讯飞语料库
 ```
 
-This action is not just a local save.
+这不是普通本地保存。
 
-### Enrollment Batch History
+### 入库批次历史
 
-`speaker_enrollment_batches` remains useful as history:
+`speaker_enrollment_batches` 仍然有价值，但只作为历史记录：
 
-- Show recent update batches.
-- Show actual concatenated audio sent to XFYUN.
-- Show duration and size.
-- Show success/error status.
+- 展示最近更新批次。
+- 展示实际发送给讯飞的拼接音频。
+- 展示时长和大小。
+- 展示成功或错误状态。
 
-It should not be used as the editable material source of truth.
+它不再承担“可编辑语料池”的职责。
 
-The editable source of truth is `speaker_voiceprint_materials`.
+可编辑语料池的真实数据源是 `speaker_voiceprint_materials`。
 
-## Data Model Requirements
+## 数据模型要求
 
-### New Material Table
+### 新增语料表
 
-Add:
+新增：
 
 ```text
 speaker_voiceprint_materials
@@ -520,7 +520,7 @@ speaker_voiceprint_materials
 - updated_at TEXT NOT NULL
 ```
 
-Indexes:
+索引：
 
 ```text
 speaker_id
@@ -528,85 +528,85 @@ status
 conversation_id
 ```
 
-### Conversation Detail Additions
+### Conversation Detail 需要补充的信息
 
-Conversation detail API should return, per segment:
+Conversation detail API 每个 segment 需要返回：
 
-- Material status: candidate / active / null.
-- Material speaker ID.
-- Material speaker name.
-- Low-confidence top matched speaker ID.
-- Low-confidence top matched speaker name.
-- Low-confidence top matched speaker identity.
-- Low-confidence top score.
+- 语料状态：candidate / active / null。
+- 语料所属 speaker ID。
+- 语料所属 speaker name。
+- 低置信最高分命中的 speaker ID。
+- 低置信最高分命中的 speaker name。
+- 低置信最高分命中的 speaker identity。
+- 低置信最高分。
 
-### Material API Requirements
+### 语料 API 要求
 
-Needed API operations:
+需要的 API：
 
-- List materials for a speaker.
-- Add selected transcript segments to existing speaker candidate materials.
-- Create new speaker and add selected transcript segments to candidate materials.
-- Quick-add low-confidence segment to top matched speaker candidate materials.
-- Promote candidate material to active.
-- Demote active material to candidate.
-- Delete material.
-- Promote all candidates.
-- Save and update XFYUN.
+- 查询某个发言人的语料列表。
+- 将选中的 transcript 片段加入已有发言人的候选语料。
+- 创建新发言人并将选中的 transcript 片段加入候选语料。
+- 将低置信片段快捷加入最高分命中发言人的候选语料。
+- 候选语料转正式。
+- 正式语料移回候选。
+- 删除语料。
+- 全部候选转正式。
+- 保存并更新讯飞。
 
-All add operations must validate:
+所有加入语料的操作必须校验：
 
-- Segment exists.
-- Segment is not too short.
-- Segment is not already used as material.
-- Target speaker exists, unless creating a new speaker.
+- Segment 存在。
+- Segment 不是过短片段。
+- Segment 尚未被用作语料。
+- 目标发言人存在，除非当前操作是新建发言人。
 
-## Implementation Order
+## 实施顺序
 
-Recommended order:
+推荐顺序：
 
-1. Add `speaker_voiceprint_materials` schema and service functions.
-2. Add material list/add/update/delete APIs.
-3. Extend conversation detail with material ownership and low-confidence top speaker information.
-4. Add transcript short-segment filter, default off.
-5. Add transcript material markers and selection disable rules.
-6. Add transcript batch-add UI for existing speaker and new speaker modes.
-7. Add low-confidence quick-add action.
-8. Add official speaker voiceprint material management section.
-9. Add budget computation and display.
-10. Add promote/demote/delete/promote-all local operations.
-11. Add save-and-update-XFYUN operation.
-12. Build a static UI preview before replacing the production admin layout.
-13. After UI review, integrate into the real admin page.
-14. Verify on real conversations containing recognized, low-confidence, no-match, error, and too-short segments.
+1. 新增 `speaker_voiceprint_materials` schema 和 service 函数。
+2. 新增语料查询、添加、更新、删除 API。
+3. 扩展 conversation detail，返回语料归属和低置信最高分发言人信息。
+4. 增加 transcript 过短片段筛选，默认关闭。
+5. 增加 transcript 语料标识和选择禁用规则。
+6. 增加 transcript 批量加入 UI，支持已有发言人和新建发言人两种模式。
+7. 增加低置信快捷加入候选语料操作。
+8. 在正式发言人页增加声纹语料管理区。
+9. 增加预算计算和展示。
+10. 实现转正式、移回候选、删除、全部候选转正式这些本地操作。
+11. 实现保存并更新讯飞。
+12. 在替换生产 admin 页面前，先构建设计 preview。
+13. UI review 通过后，再集成到真实 admin 页面。
+14. 用真实会话验证已实名、低置信、未命中、识别错误、片段过短等行为。
 
-## What Not To Do
+## 不要做的事
 
-- Do not put material transfer or material deletion on the transcript page.
-- Do not allow one segment to belong to multiple speakers' material pools.
-- Do not hide short segments by default.
-- Do not call XFYUN when adding candidate material.
-- Do not call XFYUN when promoting/demoting/deleting local materials.
-- Do not display "待确认" as a primary transcript status.
-- Do not show representative segments on the speaker detail page by default.
-- Do not duplicate audio controls.
-- Do not use large demo-style cards for long transcript or speaker lists.
-- Do not bury speaker names or identities inside body text.
-- Do not create UI controls that look functional but do not update the real source of truth.
+- 不要在 transcript 页面做语料转移或语料删除。
+- 不要允许一个片段进入多个发言人的语料池。
+- 不要默认隐藏过短片段。
+- 加入候选语料时不要调用讯飞。
+- 转正式、移回候选、删除本地语料时不要调用讯飞。
+- 不要把 `待确认` 作为主要 transcript 状态展示。
+- 不要在发言人详情页默认展示代表性片段。
+- 不要重复音频控件。
+- 不要用大号 demo 卡片展示长 transcript 或发言人列表。
+- 不要把发言人姓名或身份埋在正文里。
+- 不要创建看起来可用、但不更新真实数据源的 UI 控件。
 
-## Review Checklist
+## Review 检查清单
 
-Before implementing the final admin UI, verify:
+实现最终 admin UI 前需要确认：
 
-- Can a user read a full transcript without excessive vertical scrolling?
-- Can a user see speaker name and recognition status at a glance?
-- Can a user understand low-confidence results without opening logs?
-- Can a user identify which transcript segments are already used as materials?
-- Can a user add selected segments to an existing speaker's candidate materials?
-- Can a user create a new speaker from selected transcript segments?
-- Can a user curate candidate and active materials in one place?
-- Can a user see whether the 4MB limit is safe before updating XFYUN?
-- Is it clear which operations are local-only and which update XFYUN?
-- Can the layout scale to 10 to 20 official speakers?
-- Are repeated controls removed or consolidated?
-- Does the page feel like a production review tool rather than a prototype?
+- 用户能否在不过度滚动的情况下阅读完整 transcript？
+- 用户能否一眼看到发言人姓名和识别状态？
+- 用户能否不看日志就理解低置信结果？
+- 用户能否看出哪些 transcript 片段已经被用作语料？
+- 用户能否将选中片段加入已有发言人的候选语料？
+- 用户能否从选中的 transcript 片段创建新发言人？
+- 用户能否在一个地方维护候选语料和正式语料？
+- 用户能否在更新讯飞前判断 4MB 限制是否安全？
+- 用户是否能清楚区分本地操作和更新讯飞的操作？
+- 页面是否能承载 10 到 20 个正式发言人？
+- 重复控件是否已经移除或合并？
+- 页面是否像生产级审核工具，而不是原型 demo？
