@@ -154,7 +154,7 @@ function testSpeakerMatchRequiresThresholdAndMargin(): void {
   ];
 
   const confident = findBestMatchFromRows(embedding, confidentRows as any, 0.78, 0.06);
-  assert.equal(confident?.speaker_id, 'spk-1', 'clear winner should bind to the matching speaker');
+  assert.equal(confident.selected?.speaker_id, 'spk-1', 'clear winner should bind to the matching speaker');
 
   const ambiguousRows = [
     {
@@ -176,7 +176,8 @@ function testSpeakerMatchRequiresThresholdAndMargin(): void {
   ];
 
   const ambiguous = findBestMatchFromRows(embedding, ambiguousRows as any, 0.78, 0.06);
-  assert.equal(ambiguous, null, 'near-tied matches should defer instead of force-binding');
+  assert.equal(ambiguous.selected, null, 'near-tied matches should defer instead of force-binding');
+  assert.equal(ambiguous.reason, 'conflict', 'near-tied matches should explain the conflict');
 
   const weakRows = [
     {
@@ -190,7 +191,8 @@ function testSpeakerMatchRequiresThresholdAndMargin(): void {
   ];
 
   const weak = findBestMatchFromRows(embedding, weakRows as any, 0.95, 0.06);
-  assert.equal(weak, null, 'scores below threshold should not bind');
+  assert.equal(weak.selected, null, 'scores below threshold should not bind');
+  assert.equal(weak.reason, 'low_confidence', 'weak matches should explain low confidence');
 }
 
 function testLocalClusterMergesDifferentSonioxLabels(): void {
@@ -276,7 +278,7 @@ function testSpeakerAlignmentSmoothsBoundaryInterjection(): void {
       original_speaker_label: '1',
       aligned_speaker: 'SPEAKER_00',
       overlap_ratio: 0.98,
-      text: '前面长句。',
+      text: '前面这一段是稳定的长句。',
     },
     {
       id: 'seg-2',
@@ -296,7 +298,7 @@ function testSpeakerAlignmentSmoothsBoundaryInterjection(): void {
       original_speaker_label: '1',
       aligned_speaker: 'SPEAKER_00',
       overlap_ratio: 0.97,
-      text: '后面长句。',
+      text: '后面这一段也是稳定长句。',
     },
   ]);
 
