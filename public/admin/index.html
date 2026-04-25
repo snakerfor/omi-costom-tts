@@ -27,29 +27,18 @@
       <main>
         <section class="tab-panel active" id="tab-conversations">
           <div class="toolbar">
-            <input id="conv-speaker-name" type="search" placeholder="发言人姓名或 Soniox 标签" />
+            <input id="conv-keyword" type="search" placeholder="搜索会话关键词" />
             <select id="conv-identity-label">
-              <option value="">全部身份</option>
+              <option value="">全部关键人物身份</option>
             </select>
-            <input id="conv-keyword" type="search" placeholder="关键词" />
             <select id="conv-status">
               <option value="">全部状态</option>
-              <option value="completed">completed</option>
-              <option value="recording">recording</option>
-              <option value="failed">failed</option>
-            </select>
-            <select id="conv-unconfirmed">
-              <option value="all">全部</option>
-              <option value="true">仅含未确认发言人</option>
-              <option value="false">仅全部已确认</option>
+              <option value="completed">已完成</option>
+              <option value="recording">录制中</option>
+              <option value="failed">失败</option>
             </select>
             <input id="conv-start" type="datetime-local" />
             <input id="conv-end" type="datetime-local" />
-            <select id="conv-page-size">
-              <option value="10">每页 10 条</option>
-              <option value="20" selected>每页 20 条</option>
-              <option value="50">每页 50 条</option>
-            </select>
             <button id="conv-search">查询</button>
           </div>
 
@@ -63,6 +52,11 @@
               <div class="pagination">
                 <button id="conv-prev-page" type="button" class="secondary-button">上一页</button>
                 <span id="conversation-pagination" class="subtle">第 1 / 1 页</span>
+                <select id="conv-page-size" class="compact-select">
+                  <option value="10">10 条/页</option>
+                  <option value="20" selected>20 条/页</option>
+                  <option value="50">50 条/页</option>
+                </select>
                 <button id="conv-next-page" type="button" class="secondary-button">下一页</button>
               </div>
             </section>
@@ -94,7 +88,7 @@
                   <div class="conversation-workbench-header">
                     <div>
                       <h3>参与者概览</h3>
-                      <p class="subtle">按当前会话内 Soniox speaker_label 汇总。点击某组可过滤 transcript。</p>
+                      <p class="subtle">按当前会话内发言人汇总。点击某行可过滤 transcript。</p>
                     </div>
                     <div class="badge-row">
                       <button id="conversation-clear-speaker-filter" type="button" class="secondary-button">查看全部</button>
@@ -125,9 +119,28 @@
                 </div>
 
                 <div class="detail-section">
-                  <h3>Transcript</h3>
-                  <p class="subtle transcript-help">每条都可试听。日期只显示一次；状态按当前识别结果展示，已匹配到发言人的片段只显示“已实名”。</p>
+                  <div class="conversation-workbench-header">
+                    <div>
+                      <h3>Transcript</h3>
+                      <p class="subtle transcript-help">按发言人和录音时间核对片段。相对时间与上方播放器一致。</p>
+                    </div>
+                    <div class="transcript-controls">
+                      <select id="conversation-segment-speaker-filter">
+                        <option value="">全部发言人</option>
+                      </select>
+                      <select id="conversation-segment-page-size">
+                        <option value="30" selected>30 条/页</option>
+                        <option value="60">60 条/页</option>
+                        <option value="120">120 条/页</option>
+                      </select>
+                    </div>
+                  </div>
                   <div id="conversation-segments" class="segment-list transcript-list"></div>
+                  <div class="pagination transcript-pagination">
+                    <button id="conversation-segment-prev-page" type="button" class="secondary-button">上一页</button>
+                    <span id="conversation-segment-pagination" class="subtle">第 1 / 1 页</span>
+                    <button id="conversation-segment-next-page" type="button" class="secondary-button">下一页</button>
+                  </div>
                 </div>
               </div>
             </section>
@@ -173,7 +186,10 @@
                     <p class="eyebrow">发言人详情</p>
                     <h2 id="speaker-detail-title">-</h2>
                   </div>
-                  <div id="speaker-detail-badges" class="badge-row"></div>
+                  <div class="speaker-detail-actions">
+                    <div id="speaker-detail-badges" class="badge-row"></div>
+                    <button id="speaker-edit-toggle" type="button" class="secondary-button">编辑信息</button>
+                  </div>
                 </div>
 
                 <div class="meta-grid">
@@ -200,7 +216,9 @@
                   <div id="speaker-recent-conversations" class="segment-list"></div>
                 </div>
 
-                <form id="speaker-form" class="detail-section form-grid">
+                <div id="speaker-confirm-summary" class="detail-section"></div>
+
+                <form id="speaker-form" class="detail-section form-grid hidden">
                   <h3>确认信息</h3>
                   <label>
                     <span>姓名</span>
@@ -217,6 +235,7 @@
                     <textarea id="speaker-form-notes" rows="4" placeholder="补充说明"></textarea>
                   </label>
                   <div class="actions full-width">
+                    <button id="speaker-edit-cancel" type="button" class="secondary-button">取消</button>
                     <button type="submit">保存确认</button>
                   </div>
                 </form>

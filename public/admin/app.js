@@ -6,12 +6,14 @@
     speakers: [],
     speakerPagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 },
     selectedSpeakerId: null,
+    speakerEditMode: false,
     confirmedSpeakerOptions: [],
     conversations: [],
     conversationPagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 },
     selectedConversationId: null,
     selectedConversationDetail: null,
     selectedConversationSpeakerFilter: null,
+    conversationSegmentPagination: { page: 1, pageSize: 30, total: 0, totalPages: 1 },
     selectedSegmentIds: new Set(),
     speakerModalOpen: false,
   };
@@ -81,6 +83,17 @@
 
   function formatSegmentSeconds(value) {
     return `${(Math.max(0, Number(value || 0)) / 1000).toFixed(1)}s`;
+  }
+
+  function formatSegmentClock(value) {
+    const totalSeconds = Math.max(0, Math.floor(Number(value || 0) / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (hours > 0) {
+      return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
   }
 
   function escapeHtml(value) {
@@ -199,15 +212,18 @@
     return segment.speaker_name || segment.display_name || segment.speaker_label || '未知发言人';
   }
 
+  function conversationSegmentSpeakerKey(segment) {
+    return segment.speaker_id
+      ? `speaker:${segment.speaker_id}`
+      : `label:${segment.original_speaker_label || segment.speaker_label || 'unknown'}`;
+  }
+
   function getFilteredConversationSegments(detail = state.selectedConversationDetail) {
     const rows = detail?.segments || [];
     if (!state.selectedConversationSpeakerFilter) {
       return rows;
     }
-    return rows.filter((segment) => {
-      const label = segment.original_speaker_label || segment.speaker_label || null;
-      return label === state.selectedConversationSpeakerFilter;
-    });
+    return rows.filter((segment) => conversationSegmentSpeakerKey(segment) === state.selectedConversationSpeakerFilter);
   }
 
   function getSelectedConversationSegments(detail = state.selectedConversationDetail) {
@@ -261,7 +277,7 @@
     state.identityOptions = Array.isArray(options) ? options : [];
     const html = state.identityOptions.map((option) => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join('');
     qs('#speaker-form-identity').innerHTML = `<option value="">未确认</option>${html}`;
-    qs('#conv-identity-label').innerHTML = `<option value="">全部身份</option>${html}`;
+    qs('#conv-identity-label').innerHTML = `<option value="">全部关键人物身份</option>${html}`;
     qs('#conversation-new-identity').innerHTML = `<option value="">未确认</option>${html}`;
   }
 
@@ -362,6 +378,7 @@
   function resetSpeakerDetail() {
     qs('#speaker-empty').classList.remove('hidden');
     qs('#speaker-detail').classList.add('hidden');
+    state.speakerEditMode = false;
   }
 
   async function loadSpeakers(resetPage) {
@@ -414,6 +431,16 @@
     qs('#speaker-form-name').value = detail.speaker.name || '';
     qs('#speaker-form-identity').value = detail.speaker.identity_label || '';
     qs('#speaker-form-notes').value = detail.speaker.notes || '';
+    qs('#speaker-confirm-summary').innerHTML = `
+      <div class="speaker-confirm-summary">
+        <span><strong>姓名</strong>${escapeHtml(detail.speaker.name || '未确认')}</span>
+        <span><strong>身份</strong>${escapeHtml(detail.speaker.identity_label || '未确认')}</span>
+        <span><strong>备注</strong>${escapeHtml(detail.speaker.notes || '无')}</span>
+      </div>
+    `;
+    qs('#speaker-form').classList.toggle('hidden', !state.speakerEditMode);
+    qs('#speaker-confirm-summary').classList.toggle('hidden', state.speakerEditMode);
+    qs('#speaker-edit-toggle').textContent = state.speakerEditMode ? '收起编辑' : '编辑信息';
 
     const audio = qs('#speaker-audio');
     const audioEmpty = qs('#speaker-audio-empty');
@@ -495,7 +522,7 @@
               <span class="badge">片段 ${item.segment_count}</span>
             </div>
             ${errorText ? `<p class="subtle danger-text">失败原因：${escapeHtml(errorText)}</p>` : ''}
-            <p>${highlightText(item.summary_text || '暂无摘要', keyword)}</p>
+            <p class="conversation-list-preview">${highlightText(item.summary_text || '暂无摘要', keyword)}</p>
           </article>
         `;
       }).join('')
@@ -596,37 +623,60 @@
   function renderConversationSpeakerSummary(detail) {
     qs('#conversation-speakers').innerHTML = detail.speakers.length
       ? detail.speakers.map((speaker) => {
-        const isActive = state.selectedConversationSpeakerFilter === speaker.speaker_label;
+        const filterKey = speaker.speaker_id ? `speaker:${speaker.speaker_id}` : `label:${speaker.speaker_label || 'unknown'}`;
+        const isActive = state.selectedConversationSpeakerFilter === filterKey;
         return `
-          <article class="speaker-summary-item ${isActive ? 'active' : ''}" data-conversation-speaker-label="${escapeHtml(speaker.speaker_label || '')}">
+          <article class="speaker-summary-item ${isActive ? 'active' : ''}" data-conversation-speaker-filter="${escapeHtml(filterKey)}">
             <div class="speaker-summary-main">
-              <strong>${escapeHtml(speaker.speaker_label || speaker.display_name || '-')}</strong>
-              <span class="subtle">${escapeHtml(speaker.display_name || '-')}</span>
+              <strong>${escapeHtml(speaker.display_name || speaker.speaker_label || '-')}</strong>
+              <span class="subtle">${escapeHtml(speaker.identity_label || speaker.speaker_label || '未实名')}</span>
             </div>
             <div class="speaker-summary-meta subtle">
               <span>片段 ${speaker.segment_count}</span>
-              <span>${(speaker.total_duration_ms / 1000).toFixed(1)}s</span>
+              <span>${formatSegmentClock(speaker.total_duration_ms)}</span>
+              <span>${speaker.is_confirmed ? '已实名' : '未实名'}</span>
             </div>
           </article>
         `;
       }).join('')
       : '<p class="subtle">暂无参与者信息。</p>';
 
-    qs('#conversation-speakers').querySelectorAll('[data-conversation-speaker-label]').forEach((node) => {
+    qs('#conversation-speakers').querySelectorAll('[data-conversation-speaker-filter]').forEach((node) => {
       node.addEventListener('click', () => {
-        const raw = node.getAttribute('data-conversation-speaker-label');
-        state.selectedConversationSpeakerFilter = raw || null;
+        state.selectedConversationSpeakerFilter = node.getAttribute('data-conversation-speaker-filter') || null;
+        state.conversationSegmentPagination.page = 1;
+        renderConversationSpeakerFilter(detail);
         renderConversationSpeakerSummary(detail);
         renderConversationTranscript(detail);
       });
     });
   }
 
+  function renderConversationSpeakerFilter(detail) {
+    const select = qs('#conversation-segment-speaker-filter');
+    const options = (detail.speakers || []).map((speaker) => {
+      const key = speaker.speaker_id ? `speaker:${speaker.speaker_id}` : `label:${speaker.speaker_label || 'unknown'}`;
+      const label = `${speaker.display_name || speaker.speaker_label || '未知发言人'} · ${speaker.segment_count} 段`;
+      return `<option value="${escapeHtml(key)}">${escapeHtml(label)}</option>`;
+    }).join('');
+    select.innerHTML = `<option value="">全部发言人</option>${options}`;
+    select.value = state.selectedConversationSpeakerFilter || '';
+  }
+
   function renderConversationTranscript(detail) {
     const keyword = qs('#conv-keyword').value.trim();
     const rows = getFilteredConversationSegments(detail);
-    qs('#conversation-segments').innerHTML = rows.length
-      ? rows.map((segment) => {
+    const pageSize = Number(qs('#conversation-segment-page-size').value || state.conversationSegmentPagination.pageSize || 30);
+    const totalPages = rows.length ? Math.ceil(rows.length / pageSize) : 1;
+    const page = Math.max(1, Math.min(state.conversationSegmentPagination.page, totalPages));
+    state.conversationSegmentPagination = { page, pageSize, total: rows.length, totalPages };
+    const pageRows = rows.slice((page - 1) * pageSize, page * pageSize);
+    qs('#conversation-segment-pagination').textContent = `第 ${page} / ${totalPages} 页 · ${rows.length} 条`;
+    qs('#conversation-segment-prev-page').disabled = page <= 1;
+    qs('#conversation-segment-next-page').disabled = page >= totalPages;
+
+    qs('#conversation-segments').innerHTML = pageRows.length
+      ? pageRows.map((segment) => {
         const checked = state.selectedSegmentIds.has(segment.id) ? 'checked' : '';
         const displaySpeaker = conversationDisplaySpeaker(segment);
         const timeMeta = formatAbsoluteTimeMeta(segment.absolute_start_time, segment.absolute_end_time);
@@ -639,10 +689,9 @@
             <div class="transcript-time">
               <label class="voiceprint-check">
                 <input type="checkbox" data-conversation-segment-select ${checked} />
-                <span class="transcript-relative-range">${escapeHtml(formatSegmentSeconds(segment.start_ms))} - ${escapeHtml(formatSegmentSeconds(segment.end_ms))}</span>
+                <span class="transcript-relative-range">${escapeHtml(formatSegmentClock(segment.start_ms))} - ${escapeHtml(formatSegmentClock(segment.end_ms))}</span>
               </label>
-              <div class="transcript-date">${escapeHtml(timeMeta.dateLabel)}</div>
-              <div class="subtle transcript-absolute-range">${escapeHtml(timeMeta.rangeLabel)}</div>
+              <div class="subtle transcript-absolute-range">${escapeHtml(timeMeta.dateLabel)} ${escapeHtml(timeMeta.rangeLabel)}</div>
             </div>
             <div class="transcript-text">
               <div class="transcript-display-name subtle">${escapeHtml(displaySpeaker)}</div>
@@ -707,6 +756,7 @@
     qs('#conversation-audio-empty').classList.remove('hidden');
     state.selectedConversationDetail = null;
     state.selectedConversationSpeakerFilter = null;
+    state.conversationSegmentPagination.page = 1;
     state.selectedSegmentIds.clear();
     updateConversationSelectionSummary(null);
   }
@@ -714,20 +764,16 @@
   async function loadConversations(resetPage) {
     if (resetPage) state.conversationPagination.page = 1;
     const params = new URLSearchParams();
-    const speakerName = qs('#conv-speaker-name').value.trim();
     const identityLabel = qs('#conv-identity-label').value;
     const keyword = qs('#conv-keyword').value.trim();
     const status = qs('#conv-status').value;
-    const unconfirmed = qs('#conv-unconfirmed').value;
     const start = qs('#conv-start').value;
     const end = qs('#conv-end').value;
     const pageSize = Number(qs('#conv-page-size').value || '20');
 
-    if (speakerName) params.set('speaker_name', speakerName);
     if (identityLabel) params.set('identity_label', identityLabel);
     if (keyword) params.set('keyword', keyword);
     if (status) params.set('status', status);
-    if (unconfirmed) params.set('has_unconfirmed_speakers', unconfirmed);
     if (start) params.set('start_time', new Date(start).toISOString());
     if (end) params.set('end_time', new Date(end).toISOString());
     params.set('page', String(state.conversationPagination.page));
@@ -757,6 +803,9 @@
     state.selectedConversationDetail = detail;
     const validIds = new Set((detail.segments || []).map((segment) => segment.id));
     state.selectedSegmentIds = new Set([...state.selectedSegmentIds].filter((segmentId) => validIds.has(segmentId)));
+    if (qs('#conversation-segment-speaker-filter').value !== (state.selectedConversationSpeakerFilter || '')) {
+      state.conversationSegmentPagination.page = 1;
+    }
     qs('#conversation-empty').classList.add('hidden');
     qs('#conversation-detail').classList.remove('hidden');
     qs('#conversation-title').textContent = detail.conversation.id;
@@ -792,6 +841,7 @@
     }
 
     renderConversationSpeakerSummary(detail);
+    renderConversationSpeakerFilter(detail);
     renderConversationTranscript(detail);
     updateConversationSelectionSummary(detail);
   }
@@ -948,10 +998,36 @@
 
     qs('#conversation-clear-speaker-filter').addEventListener('click', () => {
       state.selectedConversationSpeakerFilter = null;
+      state.conversationSegmentPagination.page = 1;
+      if (state.selectedConversationDetail) {
+        renderConversationSpeakerFilter(state.selectedConversationDetail);
+        renderConversationSpeakerSummary(state.selectedConversationDetail);
+        renderConversationTranscript(state.selectedConversationDetail);
+      }
+    });
+    qs('#conversation-segment-speaker-filter').addEventListener('change', () => {
+      state.selectedConversationSpeakerFilter = qs('#conversation-segment-speaker-filter').value || null;
+      state.conversationSegmentPagination.page = 1;
       if (state.selectedConversationDetail) {
         renderConversationSpeakerSummary(state.selectedConversationDetail);
         renderConversationTranscript(state.selectedConversationDetail);
       }
+    });
+    qs('#conversation-segment-page-size').addEventListener('change', () => {
+      state.conversationSegmentPagination.page = 1;
+      if (state.selectedConversationDetail) {
+        renderConversationTranscript(state.selectedConversationDetail);
+      }
+    });
+    qs('#conversation-segment-prev-page').addEventListener('click', () => {
+      if (state.conversationSegmentPagination.page <= 1) return;
+      state.conversationSegmentPagination.page -= 1;
+      if (state.selectedConversationDetail) renderConversationTranscript(state.selectedConversationDetail);
+    });
+    qs('#conversation-segment-next-page').addEventListener('click', () => {
+      if (state.conversationSegmentPagination.page >= state.conversationSegmentPagination.totalPages) return;
+      state.conversationSegmentPagination.page += 1;
+      if (state.selectedConversationDetail) renderConversationTranscript(state.selectedConversationDetail);
     });
     qs('#conversation-open-modal').addEventListener('click', () => openSpeakerModal());
     qs('#speaker-modal-close').addEventListener('click', () => closeSpeakerModal());
@@ -995,6 +1071,18 @@
       state.speakerPagination.page += 1;
       loadSpeakers(false).catch(showError);
     });
+    qs('#speaker-edit-toggle').addEventListener('click', () => {
+      state.speakerEditMode = !state.speakerEditMode;
+      if (state.selectedSpeakerId) {
+        loadSpeakerDetail(state.selectedSpeakerId).catch(showError);
+      }
+    });
+    qs('#speaker-edit-cancel').addEventListener('click', () => {
+      state.speakerEditMode = false;
+      if (state.selectedSpeakerId) {
+        loadSpeakerDetail(state.selectedSpeakerId).catch(showError);
+      }
+    });
     qs('#speaker-form').addEventListener('submit', async (event) => {
       event.preventDefault();
       if (!state.selectedSpeakerId) return;
@@ -1003,6 +1091,7 @@
         identityLabel: qs('#speaker-form-identity').value || null,
         notes: qs('#speaker-form-notes').value,
       });
+      state.speakerEditMode = false;
       await loadSpeakers(false);
       await loadSpeakerDetail(state.selectedSpeakerId);
       await loadConversations(false);
