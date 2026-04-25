@@ -308,7 +308,7 @@ export function getSpeakerDetail(speakerId: string): SpeakerDetail {
     WHERE cs.speaker_id = ?
     GROUP BY cs.conversation_id, c.first_audio_frame_at, c.created_at, c.ended_at, c.status
     ORDER BY COALESCE(MAX(cs.absolute_end_time), c.created_at) DESC
-    LIMIT 10
+    LIMIT 5
   `).all(speakerId) as SpeakerRecentConversation[];
 
   const representativeSegments = db.prepare(`

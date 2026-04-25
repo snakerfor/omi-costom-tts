@@ -1,4 +1,5 @@
 export const IDENTITY_OPTIONS = [
+  '本人',
   '客户',
   '销售',
   '面试官',

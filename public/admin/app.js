@@ -164,7 +164,7 @@
       return { label: '已实名', className: '' };
     }
     const labels = {
-      xfyun_low_confidence: { label: '低置信', className: 'warning' },
+      xfyun_low_confidence: { label: lowConfidenceLabel(segment), className: 'warning' },
       xfyun_conflict: { label: '冲突', className: 'warning' },
       xfyun_no_match: { label: '未命中', className: 'warning' },
       xfyun_error: { label: '识别错误', className: 'danger' },
@@ -180,6 +180,24 @@
       label: segment?.speaker_label || '待确认',
       className: method ? voiceprintDecisionClass(method) : 'warning',
     };
+  }
+
+  function formatScore(value) {
+    if (value == null || value === '') return '-';
+    const score = Number(value);
+    if (!Number.isFinite(score)) return String(value);
+    return score > 1 ? score.toFixed(1) : score.toFixed(3);
+  }
+
+  function lowConfidenceLabel(segment) {
+    const score = segment?.voiceprint_top_score ?? segment?.confidence;
+    const speakerName = segment?.voiceprint_top_speaker_name || segment?.voiceprint_top_speaker_id;
+    const speaker = segment?.voiceprint_top_speaker_identity && speakerName
+      ? `${speakerName}/${segment.voiceprint_top_speaker_identity}`
+      : speakerName;
+    const parts = [`低置信 ${formatScore(score)}`];
+    if (speaker) parts.push(`候选 ${speaker}`);
+    return parts.join(' · ');
   }
 
   function speakerDisplayName(item) {
@@ -447,31 +465,6 @@
         <span><strong>备注</strong>${escapeHtml(detail.speaker.notes || '无')}</span>
       </div>
     `;
-
-    const audio = qs('#speaker-audio');
-    const audioEmpty = qs('#speaker-audio-empty');
-    if (detail.speaker.sample_audio_url) {
-      audio.src = detail.speaker.sample_audio_url;
-      audio.classList.remove('hidden');
-      audioEmpty.classList.add('hidden');
-    } else {
-      audio.pause();
-      audio.removeAttribute('src');
-      audio.classList.add('hidden');
-      audioEmpty.classList.remove('hidden');
-    }
-
-    qs('#speaker-representative-segments').innerHTML = detail.representativeSegments.length
-      ? detail.representativeSegments.map((segment) => `
-        <article class="segment-item">
-          <div class="segment-title">
-            <span>${escapeHtml(formatDate(segment.absolute_start_time))}</span>
-            <span class="subtle">${escapeHtml(segment.conversation_id)}</span>
-          </div>
-          <p>${escapeHtml(segment.text)}</p>
-        </article>
-      `).join('')
-      : '<p class="subtle">暂无代表性片段。</p>';
 
     qs('#speaker-recent-conversations').innerHTML = detail.recentConversations.length
       ? detail.recentConversations.map((conversation) => `
