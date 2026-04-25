@@ -1057,7 +1057,7 @@
                   "fill": "#8A6A2A",
                   "textGrowth": "fixed-width",
                   "width": 122,
-                  "content": "SPEAKER_03\n低置信",
+                  "content": "SPEAKER_03\n未识别",
                   "lineHeight": 1.35,
                   "fontFamily": "Inter",
                   "fontSize": 11.5,
