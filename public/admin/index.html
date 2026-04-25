@@ -69,9 +69,6 @@
                     <p class="eyebrow">会话详情</p>
                     <h2 id="conversation-title">-</h2>
                   </div>
-                  <div class="actions">
-                    <a id="conversation-audio-link" class="link-button hidden" target="_blank" rel="noreferrer">打开整场音频</a>
-                  </div>
                 </div>
 
                 <div class="meta-grid">
@@ -124,23 +121,29 @@
                       <h3>Transcript</h3>
                       <p class="subtle transcript-help">按发言人和录音时间核对片段。相对时间与上方播放器一致。</p>
                     </div>
-                    <div class="transcript-controls">
+                  </div>
+                  <div class="transcript-toolbar">
+                    <label>
+                      <span>发言人</span>
                       <select id="conversation-segment-speaker-filter">
                         <option value="">全部发言人</option>
                       </select>
+                    </label>
+                    <label>
+                      <span>分页</span>
                       <select id="conversation-segment-page-size">
                         <option value="30" selected>30 条/页</option>
                         <option value="60">60 条/页</option>
                         <option value="120">120 条/页</option>
                       </select>
+                    </label>
+                    <div class="transcript-page-actions">
+                      <button id="conversation-segment-prev-page" type="button" class="secondary-button">上一页</button>
+                      <span id="conversation-segment-pagination" class="subtle">第 1 / 1 页</span>
+                      <button id="conversation-segment-next-page" type="button" class="secondary-button">下一页</button>
                     </div>
                   </div>
                   <div id="conversation-segments" class="segment-list transcript-list"></div>
-                  <div class="pagination transcript-pagination">
-                    <button id="conversation-segment-prev-page" type="button" class="secondary-button">上一页</button>
-                    <span id="conversation-segment-pagination" class="subtle">第 1 / 1 页</span>
-                    <button id="conversation-segment-next-page" type="button" class="secondary-button">下一页</button>
-                  </div>
                 </div>
               </div>
             </section>

@@ -355,13 +355,17 @@
     listEl.innerHTML = state.speakers.length
       ? state.speakers.map((item) => `
         <article class="list-item ${item.id === state.selectedSpeakerId ? 'active' : ''}" data-speaker-id="${item.id}">
-          <div class="list-item-title">
-            <span>${highlightText(speakerDisplayName(item), keyword)}</span>
-            <span class="subtle">${escapeHtml(formatDate(item.last_seen_at || item.created_at))}</span>
+          <div class="speaker-list-row">
+            <div class="speaker-list-main">
+              <strong>${highlightText(speakerDisplayName(item), keyword)}</strong>
+              <span class="subtle">${highlightText(item.identity_label || '身份未确认', keyword)}</span>
+            </div>
+            <div class="speaker-list-meta subtle">
+              <span>${escapeHtml(formatDate(item.last_seen_at || item.created_at))}</span>
+              <button type="button" class="inline-action compact-action secondary-button" data-edit-speaker="${escapeHtml(item.id)}">编辑</button>
+            </div>
           </div>
-          <div class="badge-row">${speakerBadges(item)}</div>
-          <p class="subtle">${highlightText(item.identity_label || '身份未确认', keyword)}</p>
-          <p>${highlightText((item.sample_text || '').slice(0, 80) || '暂无样本文本', keyword)}</p>
+          <p class="conversation-list-preview">${highlightText((item.sample_text || '').slice(0, 80) || '暂无样本文本', keyword)}</p>
         </article>
       `).join('')
       : '<p class="subtle">没有匹配的正式发言人。</p>';
@@ -369,6 +373,15 @@
     listEl.querySelectorAll('[data-speaker-id]').forEach((node) => {
       node.addEventListener('click', () => {
         state.selectedSpeakerId = node.getAttribute('data-speaker-id');
+        renderSpeakerList();
+        loadSpeakerDetail(state.selectedSpeakerId).catch(showError);
+      });
+    });
+    listEl.querySelectorAll('[data-edit-speaker]').forEach((node) => {
+      node.addEventListener('click', (event) => {
+        event.stopPropagation();
+        state.selectedSpeakerId = node.getAttribute('data-edit-speaker');
+        state.speakerEditMode = true;
         renderSpeakerList();
         loadSpeakerDetail(state.selectedSpeakerId).catch(showError);
       });
@@ -682,25 +695,31 @@
         const timeMeta = formatAbsoluteTimeMeta(segment.absolute_start_time, segment.absolute_end_time);
         const statusMeta = segmentStatusMeta(segment);
         const speakerAction = segment.speaker_id
-          ? `<button class="inline-action compact-action secondary-button" data-go-speaker="${escapeHtml(segment.speaker_id)}">查看发言人</button>`
+          ? `<button type="button" class="inline-action compact-action secondary-button" data-go-speaker="${escapeHtml(segment.speaker_id)}">查看发言人</button>`
           : '';
         return `
           <article class="transcript-row" data-conversation-segment-id="${escapeHtml(segment.id)}">
+            <label class="voiceprint-check transcript-select">
+              <input type="checkbox" data-conversation-segment-select ${checked} />
+              <span class="sr-only">选择片段</span>
+            </label>
             <div class="transcript-time">
-              <label class="voiceprint-check">
-                <input type="checkbox" data-conversation-segment-select ${checked} />
-                <span class="transcript-relative-range">${escapeHtml(formatSegmentClock(segment.start_ms))} - ${escapeHtml(formatSegmentClock(segment.end_ms))}</span>
-              </label>
+              <span class="transcript-relative-range">${escapeHtml(formatSegmentClock(segment.start_ms))} - ${escapeHtml(formatSegmentClock(segment.end_ms))}</span>
               <div class="subtle transcript-absolute-range">${escapeHtml(timeMeta.dateLabel)} ${escapeHtml(timeMeta.rangeLabel)}</div>
             </div>
+            <div class="transcript-speaker">
+              <strong>${escapeHtml(displaySpeaker)}</strong>
+              <span class="subtle">${escapeHtml(segment.speaker_identity || segment.original_speaker_label || segment.speaker_label || '未实名')}</span>
+            </div>
             <div class="transcript-text">
-              <div class="transcript-display-name subtle">${escapeHtml(displaySpeaker)}</div>
               <div class="transcript-text-content">${highlightText(segment.text, keyword)}</div>
             </div>
             <div class="transcript-actions">
-              <span class="badge ${statusMeta.className}">${escapeHtml(statusMeta.label)}</span>
-              <button type="button" class="inline-action compact-action secondary-button" data-play-segment="${escapeHtml(segment.id)}">试听</button>
-              ${speakerAction}
+              <div class="transcript-action-row">
+                <span class="badge ${statusMeta.className}">${escapeHtml(statusMeta.label)}</span>
+                <button type="button" class="inline-action compact-action secondary-button" data-play-segment="${escapeHtml(segment.id)}">试听</button>
+                ${speakerAction}
+              </div>
             </div>
           </article>
         `;
@@ -822,18 +841,13 @@
       errorBanner.classList.toggle('hidden', !errorText);
     }
 
-    const audioLink = qs('#conversation-audio-link');
     const audioPlayer = qs('#conversation-audio-player');
     const audioEmpty = qs('#conversation-audio-empty');
     if (detail.conversation.audio_file_url) {
-      audioLink.href = detail.conversation.audio_file_url;
-      audioLink.classList.remove('hidden');
       audioPlayer.src = detail.conversation.audio_file_url;
       audioPlayer.classList.remove('hidden');
       audioEmpty.classList.add('hidden');
     } else {
-      audioLink.classList.add('hidden');
-      audioLink.removeAttribute('href');
       audioPlayer.pause();
       audioPlayer.removeAttribute('src');
       audioPlayer.classList.add('hidden');

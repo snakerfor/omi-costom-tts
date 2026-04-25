@@ -12,7 +12,7 @@
   --warning-soft: rgba(217, 122, 0, 0.12);
   --danger: #cf3f34;
   --danger-soft: rgba(207, 63, 52, 0.12);
-  --shadow: 0 18px 40px rgba(22, 50, 43, 0.08);
+  --shadow: 0 10px 26px rgba(22, 50, 43, 0.07);
 }
 
 * {
@@ -60,7 +60,7 @@ textarea {
   margin-bottom: 16px;
   background: rgba(255, 255, 255, 0.78);
   border: 1px solid var(--border);
-  border-radius: 28px;
+  border-radius: 16px;
   box-shadow: var(--shadow);
   backdrop-filter: blur(12px);
 }
@@ -186,7 +186,7 @@ button {
   padding: 6px;
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid var(--border);
-  border-radius: 18px;
+  border-radius: 12px;
   margin-bottom: 16px;
 }
 
@@ -217,7 +217,7 @@ button {
   gap: 12px;
   padding: 16px;
   border: 1px solid var(--border);
-  border-radius: 24px;
+  border-radius: 14px;
   background: rgba(255, 255, 255, 0.78);
   margin-bottom: 16px;
   box-shadow: var(--shadow);
@@ -226,13 +226,13 @@ button {
 .toolbar input,
 .toolbar select,
 .compact-select,
-.transcript-controls select,
+.transcript-toolbar select,
 .form-grid input,
 .form-grid textarea {
   width: 100%;
   padding: 11px 12px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 10px;
   background: var(--surface-strong);
 }
 
@@ -270,7 +270,7 @@ button,
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 28px;
+  border-radius: 14px;
   box-shadow: var(--shadow);
   overflow: hidden;
 }
@@ -298,9 +298,9 @@ button,
 
 .list-item,
 .segment-item {
-  padding: 16px;
+  padding: 12px 14px;
   border: 1px solid var(--border);
-  border-radius: 18px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.72);
 }
 
@@ -368,7 +368,7 @@ button,
   gap: 6px;
   padding: 14px;
   background: rgba(15, 139, 109, 0.06);
-  border-radius: 18px;
+  border-radius: 12px;
 }
 
 .meta-label {
@@ -533,12 +533,12 @@ button,
 
 .transcript-row {
   display: grid;
-  grid-template-columns: 172px minmax(0, 1fr) 126px;
+  grid-template-columns: 38px 150px 170px minmax(0, 1fr) 230px;
   gap: 12px;
-  align-items: start;
-  padding: 9px 10px;
+  align-items: center;
+  padding: 10px 14px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.76);
 }
 
@@ -548,19 +548,40 @@ button,
 }
 
 .transcript-time,
+.transcript-speaker,
 .transcript-text,
 .transcript-actions {
   display: grid;
   gap: 4px;
 }
 
-.transcript-display-name {
-  font-size: 12px;
+.transcript-select {
+  justify-content: center;
+  align-items: center;
+}
+
+.transcript-select input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--primary);
+}
+
+.transcript-speaker {
+  align-content: center;
+  min-width: 0;
+}
+
+.transcript-speaker strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .transcript-actions {
   justify-items: end;
-  align-content: start;
+  align-content: center;
+  min-width: 0;
 }
 
 .transcript-date {
@@ -584,8 +605,18 @@ button,
   word-break: break-word;
 }
 
+.transcript-action-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
 .transcript-actions .badge {
   justify-self: end;
+  white-space: nowrap;
 }
 
 .conversation-workbench-header {
@@ -596,12 +627,33 @@ button,
   margin-bottom: 12px;
 }
 
-.transcript-controls {
+.transcript-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 150px auto;
+  gap: 12px;
+  align-items: end;
+  padding: 12px;
+  margin: 4px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(15, 139, 109, 0.045);
+}
+
+.transcript-toolbar label {
+  display: grid;
+  gap: 5px;
+}
+
+.transcript-toolbar label span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.transcript-page-actions {
   display: flex;
-  gap: 10px;
   align-items: center;
+  gap: 10px;
   justify-content: flex-end;
-  min-width: 320px;
 }
 
 .transcript-pagination {
@@ -630,7 +682,7 @@ button,
 
 .conversation-audio-player {
   width: 100%;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .conversation-voiceprint-form {
@@ -652,6 +704,45 @@ button,
 .compact-action {
   padding: 5px 8px !important;
   font-size: 12px !important;
+}
+
+.speaker-list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.speaker-list-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.speaker-list-main strong,
+.speaker-list-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.speaker-list-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .danger-text {
@@ -824,11 +915,6 @@ textarea:focus-visible {
   outline-offset: 2px;
 }
 
-/* Transcript row layout improvements */
-.transcript-row {
-  grid-template-columns: 200px minmax(0, 1fr) auto;
-}
-
 .transcript-text {
   min-width: 0;
 }
@@ -906,8 +992,16 @@ textarea:focus-visible {
 
   .meta-grid,
   .form-grid,
+  .transcript-toolbar,
   .transcript-row {
     grid-template-columns: 1fr;
+  }
+
+  .transcript-page-actions,
+  .transcript-actions,
+  .transcript-action-row {
+    justify-content: flex-start;
+    justify-items: start;
   }
 
   .conversation-workbench-header {
