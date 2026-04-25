@@ -814,6 +814,56 @@
                 },
                 {
                   "type": "frame",
+                  "id": "wqzTv",
+                  "name": "statusFilter",
+                  "width": 108,
+                  "layout": "vertical",
+                  "gap": 5,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "fbIoe",
+                      "name": "statusLabel",
+                      "fill": "#76847D",
+                      "content": "状态筛选",
+                      "fontFamily": "Inter",
+                      "fontSize": 11,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "TmDRp",
+                      "name": "statusBox",
+                      "width": "fill_container",
+                      "height": 34,
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 10,
+                      "stroke": {
+                        "thickness": 1,
+                        "fill": "#DCD5CA"
+                      },
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "LPxlC",
+                          "name": "statusText",
+                          "fill": "#22312D",
+                          "content": "全部状态",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
                   "id": "cw-hide-short",
                   "width": 96,
                   "height": 34,
@@ -874,56 +924,6 @@
                       "fontFamily": "Inter",
                       "fontSize": 13,
                       "fontWeight": "750"
-                    }
-                  ]
-                },
-                {
-                  "type": "frame",
-                  "id": "wqzTv",
-                  "name": "statusFilter",
-                  "width": 108,
-                  "layout": "vertical",
-                  "gap": 5,
-                  "children": [
-                    {
-                      "type": "text",
-                      "id": "fbIoe",
-                      "name": "statusLabel",
-                      "fill": "#76847D",
-                      "content": "状态筛选",
-                      "fontFamily": "Inter",
-                      "fontSize": 11,
-                      "fontWeight": "normal"
-                    },
-                    {
-                      "type": "frame",
-                      "id": "TmDRp",
-                      "name": "statusBox",
-                      "width": "fill_container",
-                      "height": 34,
-                      "fill": "#FFFFFF",
-                      "cornerRadius": 10,
-                      "stroke": {
-                        "thickness": 1,
-                        "fill": "#DCD5CA"
-                      },
-                      "padding": [
-                        0,
-                        10
-                      ],
-                      "alignItems": "center",
-                      "children": [
-                        {
-                          "type": "text",
-                          "id": "LPxlC",
-                          "name": "statusText",
-                          "fill": "#22312D",
-                          "content": "全部状态",
-                          "fontFamily": "Inter",
-                          "fontSize": 12,
-                          "fontWeight": "normal"
-                        }
-                      ]
                     }
                   ]
                 }
@@ -1057,7 +1057,7 @@
                   "fill": "#8A6A2A",
                   "textGrowth": "fixed-width",
                   "width": 122,
-                  "content": "SPEAKER_03\n讯飞近似：李四 / 同事",
+                  "content": "SPEAKER_03\n低置信",
                   "lineHeight": 1.35,
                   "fontFamily": "Inter",
                   "fontSize": 11.5,
@@ -1931,10 +1931,14 @@
                         {
                           "type": "frame",
                           "id": "sm-active-item-1-listen",
-                          "width": 52,
-                          "height": 30,
-                          "fill": "#EAF5EF",
-                          "cornerRadius": 999,
+                          "width": 46,
+                          "height": 28,
+                          "fill": "#F7FBF8",
+                          "cornerRadius": 6,
+                          "stroke": {
+                            "thickness": 1,
+                            "fill": "#BFD8C8"
+                          },
                           "justifyContent": "center",
                           "alignItems": "center",
                           "children": [
@@ -2001,10 +2005,14 @@
                         {
                           "type": "frame",
                           "id": "sm-active-item-2-listen",
-                          "width": 52,
-                          "height": 30,
-                          "fill": "#EAF5EF",
-                          "cornerRadius": 999,
+                          "width": 46,
+                          "height": 28,
+                          "fill": "#F7FBF8",
+                          "cornerRadius": 6,
+                          "stroke": {
+                            "thickness": 1,
+                            "fill": "#BFD8C8"
+                          },
                           "justifyContent": "center",
                           "alignItems": "center",
                           "children": [
@@ -2097,10 +2105,14 @@
                         {
                           "type": "frame",
                           "id": "sm-candidate-item-1-listen",
-                          "width": 52,
-                          "height": 30,
-                          "fill": "#FFF4DE",
-                          "cornerRadius": 999,
+                          "width": 46,
+                          "height": 28,
+                          "fill": "#FFFDF8",
+                          "cornerRadius": 6,
+                          "stroke": {
+                            "thickness": 1,
+                            "fill": "#E4C98F"
+                          },
                           "justifyContent": "center",
                           "alignItems": "center",
                           "children": [
@@ -2167,10 +2179,14 @@
                         {
                           "type": "frame",
                           "id": "sm-candidate-item-2-listen",
-                          "width": 52,
-                          "height": 30,
-                          "fill": "#FFF4DE",
-                          "cornerRadius": 999,
+                          "width": 46,
+                          "height": 28,
+                          "fill": "#FFFDF8",
+                          "cornerRadius": 6,
+                          "stroke": {
+                            "thickness": 1,
+                            "fill": "#E4C98F"
+                          },
                           "justifyContent": "center",
                           "alignItems": "center",
                           "children": [
