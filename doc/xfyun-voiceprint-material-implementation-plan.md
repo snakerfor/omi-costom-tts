@@ -253,9 +253,134 @@ POST /api/admin/speakers/:speakerId/voiceprint/xfyun/sync
 - 最近同步批次展示。
 - 同步失败错误展示。
 
-## 4. 阶段三：稳定和防污染
+## 4. 阶段三：历史会话回填
 
-阶段三解决“长期使用是否安全”的问题。
+阶段三解决“创建或更新发言人声纹后，如何让历史会话中这个人的片段变成已识别”的问题。
+
+这个能力很重要，但不建议放进阶段一。原因是历史回填会批量修改 `conversation_segments.speaker_id`，如果阈值或语料有问题，可能污染大量历史数据。应该先把声纹语料创建/更新闭环跑通，再做可控回填。
+
+### 4.1 目标
+
+当某个 speaker 的讯飞 feature 创建或更新成功后，用户可以触发历史回填：
+
+- 重新扫描历史会话中未识别、低置信、冲突或无匹配的片段。
+- 用新的讯飞 feature 参与识别。
+- 对高置信命中的片段回填 `speaker_id`、`speaker_name`、`speaker_identity`、`confidence`、`resolution_method`。
+- 保留每条片段的 `segment_voiceprint_matches` 记录，方便追溯。
+
+### 4.2 分步实现
+
+建议分三步做，不要一开始就全库回刷。
+
+#### 4.2.1 指定会话回填
+
+先支持对指定 conversation 回填：
+
+```http
+POST /api/admin/conversations/:conversationId/voiceprint/xfyun/backfill
+```
+
+现有后端已有类似能力，可以保留并调整定位：
+
+- 只处理 unresolved 片段。
+- 不处理人工确认过的片段。
+- 不处理人工排除或过短片段。
+- 写入新的 `segment_voiceprint_matches`。
+- 只有高置信且本地 feature 能映射到 speaker 时，才更新 `conversation_segments`。
+
+#### 4.2.2 指定 speaker 的历史候选扫描
+
+再新增按 speaker 触发的回填入口：
+
+```http
+POST /api/admin/speakers/:speakerId/voiceprint/xfyun/backfill
+```
+
+请求参数可以先支持：
+
+```json
+{
+  "startTime": "2026-01-01T00:00:00.000Z",
+  "endTime": "2026-04-01T00:00:00.000Z",
+  "limit": 500,
+  "dryRun": true
+}
+```
+
+阶段三第一版建议默认 `dryRun=true`。
+
+dry run 只返回：
+
+- 扫描片段数。
+- 可能命中该 speaker 的片段数。
+- top score 分布。
+- 会话分布。
+- 样例片段。
+
+用户确认后再执行真实回填。
+
+#### 4.2.3 全库范围回填
+
+最后再支持全库或大范围回填。
+
+这个阶段必须有保护：
+
+- 默认限制每次处理数量。
+- 必须支持 dry run。
+- 必须支持时间范围。
+- 必须跳过已有人工确认 speaker 的片段。
+- 必须保留匹配流水。
+- 必须可按 speaker 查看本次回填结果。
+
+### 4.3 回填策略
+
+历史回填不应该只依赖“这个 speaker 刚更新了 feature”就无条件改全库。
+
+建议策略：
+
+1. 只扫描 unresolved 片段：
+   - `speaker_id IS NULL`
+   - 或 `resolution_method IN ('xfyun_low_confidence', 'xfyun_conflict', 'xfyun_no_match', 'xfyun_error')`
+2. 跳过人工确认：
+   - `human_segment_confirmed`
+   - `manual_confirm`
+   - `manual_identity_confirm`
+3. 跳过明确排除和过短：
+   - `human_segment_excluded`
+   - `xfyun_skipped_short`
+4. 命中阈值必须不低于正常自动识别阈值。
+5. top1 必须映射到目标 speaker。
+6. top1 与 top2 必须满足 margin。
+
+### 4.4 回填后的状态
+
+回填成功的片段建议使用独立 `resolution_method`，和实时/普通扫描区分：
+
+```text
+xfyun_history_backfill_hit
+```
+
+这样后续能区分：
+
+- 实时命中。
+- 普通会话扫描命中。
+- 创建/更新 speaker 后的历史回填命中。
+
+### 4.5 阶段三验收标准
+
+阶段三完成后，需要能验证：
+
+- 新建 speaker 并同步讯飞后，可以对指定会话重新识别。
+- 更新 speaker 语料并同步讯飞后，可以 dry run 扫描历史未识别片段。
+- dry run 不修改 `conversation_segments`。
+- 确认执行后，只回填高置信命中目标 speaker 的片段。
+- 人工确认过的片段不会被覆盖。
+- 每条被扫描片段都有 `segment_voiceprint_matches` 记录。
+- 被回填片段的 `resolution_method` 可区分历史回填来源。
+
+## 5. 阶段四：稳定和防污染
+
+阶段四解决“长期使用是否安全”的问题。
 
 建议补齐：
 
@@ -277,9 +402,9 @@ POST /api/admin/speakers/:speakerId/voiceprint/xfyun/sync
 - 批量候选转正式。
 - 按识别失败样本推荐候选语料。
 
-## 5. 阶段四：高级优化
+## 6. 阶段五：高级优化
 
-阶段四可以再考虑更智能的语料选择。
+阶段五可以再考虑更智能的语料选择。
 
 可选能力：
 
@@ -289,7 +414,7 @@ POST /api/admin/speakers/:speakerId/voiceprint/xfyun/sync
 - 对比更新前后的识别效果。
 - 多 provider 声纹服务适配。
 
-## 6. 不放进 MVP 的内容
+## 7. 不放进 MVP 的内容
 
 以下能力不要进入阶段一：
 
@@ -301,5 +426,6 @@ POST /api/admin/speakers/:speakerId/voiceprint/xfyun/sync
 - 历史审计 UI。
 - 多 provider 支持。
 - 全库回刷。
+- 历史会话批量回填。
 
 阶段一只需要把人工可控闭环跑通。
