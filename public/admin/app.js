@@ -673,31 +673,6 @@
       <span><strong>说明</strong>当前优先管理正式语料与候选语料，基础信息单独保存。</span>
     `;
 
-    qs('#speaker-recent-conversations').innerHTML = detail.recentConversations.length
-      ? detail.recentConversations.map((conversation) => `
-        <article class="segment-item speaker-recent-item">
-          <div class="segment-title">
-            <div class="speaker-recent-main">
-              <strong>${escapeHtml(formatDate(conversation.started_at))}</strong>
-              <span class="subtle">会话 ${escapeHtml(conversation.conversation_id)}，片段 ${conversation.segment_count}</span>
-            </div>
-            <span class="badge neutral">${escapeHtml(conversationStatusMeta(conversation).label)}</span>
-          </div>
-          <div class="speaker-recent-actions">
-            <button class="inline-action secondary-button" data-open-conversation="${conversation.conversation_id}">查看对话记录</button>
-          </div>
-        </article>
-      `).join('')
-      : '<p class="subtle">暂无最近会话。</p>';
-
-    qs('#speaker-recent-conversations').querySelectorAll('[data-open-conversation]').forEach((node) => {
-      node.addEventListener('click', () => {
-        switchTab('conversations');
-        state.selectedConversationId = node.getAttribute('data-open-conversation');
-        loadConversations(false).catch(showError);
-      });
-    });
-
     renderSpeakerMaterials();
   }
 
@@ -707,11 +682,6 @@
     const summary = summarizeSpeakerMaterialDraft(draft);
     qs('#speaker-formal-title').textContent = `正式语料 ${summary.formalItems.length}`;
     qs('#speaker-candidate-title').textContent = `候选语料 ${summary.candidateItems.length}`;
-    qs('#speaker-material-summary').innerHTML = `
-      <div><span class="meta-label">预算概览</span><strong>${summary.formalItems.length + summary.candidateItems.length} 段 · ${formatSegmentSeconds(summary.formalDurationMs + summary.candidateDurationMs)}</strong></div>
-      <div><span class="meta-label">正式 / 候选</span><strong>正式 ${summary.formalItems.length} 段 / 候选 ${summary.candidateItems.length} 段</strong></div>
-      <div><span class="meta-label">同步说明</span><strong>仅正式语料会写入讯飞 Feature</strong></div>
-    `;
 
     const renderItem = (item, mode) => `
       <article class="segment-item speaker-material-item">
@@ -728,11 +698,9 @@
             ? `${Math.max(0, Number(item.text?.length || 0))} 字 · ${formatSegmentSeconds(Math.max(0, Number(item.end_ms || 0) - Number(item.start_ms || 0)))}`
             : `${Math.max(0, Number(item.text?.length || 0))} 字 · ${formatSegmentSeconds(Math.max(0, Number(item.end_ms || 0) - Number(item.start_ms || 0)))} · 候选命中 ${formatScore(item.voiceprint_top_score)}`}</span>
           <div class="speaker-material-actions">
-            <button type="button" class="inline-action secondary-button" data-speaker-material-play="${escapeHtml(item.id)}">试听</button>
-            <button type="button" class="inline-action secondary-button" data-open-conversation="${escapeHtml(item.conversation_id)}">查看对话</button>
             ${mode === 'formal'
               ? `<button type="button" class="inline-action secondary-button" data-speaker-material-demote="${escapeHtml(item.id)}">移回候选</button>`
-              : `<button type="button" data-speaker-material-promote="${escapeHtml(item.id)}">转正式</button>`}
+              : `<button type="button" class="inline-action secondary-button" data-speaker-material-play="${escapeHtml(item.id)}">试听</button><button type="button" data-speaker-material-promote="${escapeHtml(item.id)}">转正式</button>`}
           </div>
         </div>
       </article>
@@ -758,13 +726,6 @@
     });
     document.querySelectorAll('[data-speaker-material-demote]').forEach((node) => {
       node.addEventListener('click', () => moveSpeakerMaterial(node.getAttribute('data-speaker-material-demote'), 'candidate'));
-    });
-    document.querySelectorAll('#speaker-formal-materials [data-open-conversation], #speaker-candidate-materials [data-open-conversation]').forEach((node) => {
-      node.addEventListener('click', () => {
-        switchTab('conversations');
-        state.selectedConversationId = node.getAttribute('data-open-conversation');
-        loadConversations(false).catch(showError);
-      });
     });
   }
 

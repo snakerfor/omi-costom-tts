@@ -836,53 +836,6 @@ main {
   font-size: 13px;
 }
 
-.speaker-recent-item {
-  display: grid;
-  gap: 10px;
-}
-
-.speaker-recent-main {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.speaker-recent-main strong,
-.speaker-recent-main span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.speaker-recent-actions {
-  display: flex;
-  justify-content: flex-start;
-}
-
-.speaker-material-summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.speaker-material-summary div {
-  display: grid;
-  gap: 6px;
-  padding: 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-soft);
-}
-
-.speaker-material-summary strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--heading);
-  font-size: 15px;
-}
-
 .speaker-material-stack {
   display: grid;
   gap: 12px;
@@ -921,7 +874,7 @@ main {
 .speaker-material-list {
   padding: 0;
   min-height: 0;
-  max-height: 290px;
+  max-height: 390px;
   overflow: auto;
 }
 
@@ -1893,7 +1846,6 @@ main {
 
   .speaker-confirm-summary,
   .voiceprint-assets-grid,
-  .speaker-material-summary,
   .speaker-material-stack {
     grid-template-columns: 1fr;
   }
