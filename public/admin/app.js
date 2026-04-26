@@ -699,7 +699,7 @@
             : `${Math.max(0, Number(item.text?.length || 0))} 字 · ${formatSegmentSeconds(Math.max(0, Number(item.end_ms || 0) - Number(item.start_ms || 0)))} · 候选命中 ${formatScore(item.voiceprint_top_score)}`}</span>
           <div class="speaker-material-actions">
             ${mode === 'formal'
-              ? `<button type="button" class="inline-action secondary-button" data-speaker-material-demote="${escapeHtml(item.id)}">移回候选</button>`
+              ? `<button type="button" class="inline-action secondary-button" data-speaker-material-play="${escapeHtml(item.id)}">试听</button><button type="button" class="inline-action secondary-button" data-speaker-material-demote="${escapeHtml(item.id)}">移回候选</button>`
               : `<button type="button" class="inline-action secondary-button" data-speaker-material-play="${escapeHtml(item.id)}">试听</button><button type="button" data-speaker-material-promote="${escapeHtml(item.id)}">转正式</button>`}
           </div>
         </div>
