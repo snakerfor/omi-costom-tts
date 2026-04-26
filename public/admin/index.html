@@ -197,13 +197,11 @@
                 <span id="speaker-list-count" class="subtle"></span>
               </div>
               <div class="toolbar sidebar-toolbar">
-                <input id="speaker-q" type="search" placeholder="搜索姓名、标签、身份、样本文本" />
+                <input id="speaker-q" type="search" placeholder="搜索姓名 / 身份" />
                 <select id="speaker-confirmation">
                   <option value="confirmed" selected>仅正式发言人</option>
                   <option value="all">全部</option>
                 </select>
-                <input id="speaker-start" type="date" />
-                <input id="speaker-end" type="date" />
                 <select id="speaker-page-size">
                   <option value="10">每页 10 条</option>
                   <option value="20" selected>每页 20 条</option>
@@ -224,54 +222,53 @@
               <div id="speaker-detail" class="detail hidden">
                 <div class="detail-header">
                   <div>
-                    <p class="eyebrow">发言人详情</p>
+                    <p class="eyebrow">正式发言人</p>
                     <h2 id="speaker-detail-title">-</h2>
                   </div>
                   <div class="speaker-detail-actions">
-                    <div id="speaker-detail-badges" class="badge-row"></div>
                     <button id="speaker-detail-edit" type="button" class="secondary-button">编辑基础信息</button>
                   </div>
                 </div>
 
                 <div id="speaker-confirm-summary" class="detail-section"></div>
 
-                <div class="meta-grid">
-                  <div><span class="meta-label">ID</span><span id="speaker-id"></span></div>
-                  <div><span class="meta-label">首次出现</span><span id="speaker-first-seen"></span></div>
-                  <div><span class="meta-label">最近出现</span><span id="speaker-last-seen"></span></div>
-                  <div><span class="meta-label">会话数</span><span id="speaker-conv-count"></span></div>
-                  <div><span class="meta-label">片段数</span><span id="speaker-seg-count"></span></div>
+                <div class="detail-section">
+                  <div class="section-title-row">
+                    <div>
+                      <h3>声纹语料管理</h3>
+                      <p class="subtle">这里管理该发言人的正式语料和候选语料。调整完成后，再统一保存更新讯飞。</p>
+                    </div>
+                    <button id="speaker-material-save" type="button">保存并更新讯飞</button>
+                  </div>
+                  <div id="speaker-material-summary" class="speaker-material-summary"></div>
+                  <div class="speaker-material-stack">
+                    <section class="speaker-material-panel speaker-material-panel-formal">
+                      <div class="speaker-material-column-header">
+                        <div>
+                          <h4 id="speaker-formal-title">正式语料 0</h4>
+                          <p class="subtle">参与下次更新</p>
+                        </div>
+                      </div>
+                      <div id="speaker-formal-materials" class="segment-list speaker-material-list"></div>
+                    </section>
+                    <section class="speaker-material-panel speaker-material-panel-candidate">
+                      <div class="speaker-material-column-header">
+                        <div>
+                          <h4 id="speaker-candidate-title">候选语料 0</h4>
+                          <p class="subtle">来自当前匹配到该发言人的未确认片段</p>
+                        </div>
+                        <button id="speaker-candidate-promote-all" type="button" class="secondary-button">全部转正式</button>
+                      </div>
+                      <div id="speaker-candidate-materials" class="segment-list speaker-material-list"></div>
+                    </section>
+                  </div>
                 </div>
 
                 <div class="detail-section">
                   <div class="section-title-row">
                     <div>
-                      <h3>讯飞声纹语料</h3>
-                      <p class="subtle">只展示已注册 Feature 和最近注册/更新批次。新增语料需要从对话记录中勾选片段。</p>
-                    </div>
-                  </div>
-                  <div class="speaker-material-budget">
-                    <div>
-                      <span class="meta-label">Active Feature</span>
-                      <strong id="speaker-feature-count">0</strong>
-                    </div>
-                    <div>
-                      <span class="meta-label">注册/更新批次</span>
-                      <strong id="speaker-batch-count">0</strong>
-                    </div>
-                    <div>
-                      <span class="meta-label">最近更新</span>
-                      <strong id="speaker-material-updated">-</strong>
-                    </div>
-                  </div>
-                  <div id="speaker-voiceprint-assets-main" class="segment-list speaker-material-list"></div>
-                </div>
-
-                <div class="detail-section">
-                  <div class="section-title-row">
-                    <div>
-                      <h3>最近会话</h3>
-                      <p class="subtle">用于回到原始 transcript 继续补充或复核语料。</p>
+                      <h3>相关会话</h3>
+                      <p class="subtle">需要继续补语料时，可以回到对话记录页处理。</p>
                     </div>
                   </div>
                   <div id="speaker-recent-conversations" class="segment-list"></div>

@@ -61,6 +61,26 @@ export interface SpeakerRepresentativeSegment {
   text: string;
 }
 
+export interface SpeakerMaterialSegment {
+  id: string;
+  conversation_id: string;
+  started_at: string | null;
+  audio_file_path: string | null;
+  start_ms: number;
+  end_ms: number;
+  absolute_start_time: string | null;
+  absolute_end_time: string | null;
+  text: string;
+  original_speaker_label: string | null;
+  speaker_label: string | null;
+  speaker_id: string | null;
+  speaker_name: string | null;
+  resolution_method: string | null;
+  confidence: number | null;
+  voiceprint_top_score: number | null;
+  voiceprint_top_speaker_id: string | null;
+}
+
 export interface SpeakerVoiceprintFeature {
   id: string;
   provider: string;
@@ -95,6 +115,8 @@ export interface SpeakerDetail {
   representativeSegments: SpeakerRepresentativeSegment[];
   voiceprintFeatures: SpeakerVoiceprintFeature[];
   enrollmentBatches: SpeakerEnrollmentBatch[];
+  formalMaterials: SpeakerMaterialSegment[];
+  candidateMaterials: SpeakerMaterialSegment[];
 }
 
 export interface UpdateSpeakerInput {
@@ -369,12 +391,87 @@ export function getSpeakerDetail(speakerId: string): SpeakerDetail {
     LIMIT 10
   `).all(speakerId) as SpeakerEnrollmentBatch[];
 
+  const formalMaterials = db.prepare(`
+    SELECT
+      cs.id,
+      cs.conversation_id,
+      COALESCE(c.first_audio_frame_at, c.created_at) AS started_at,
+      c.audio_file_path,
+      cs.start_ms,
+      cs.end_ms,
+      cs.absolute_start_time,
+      cs.absolute_end_time,
+      cs.text,
+      cs.original_speaker_label,
+      cs.speaker_label,
+      cs.speaker_id,
+      cs.speaker_name,
+      cs.resolution_method,
+      cs.confidence,
+      svm.top_score AS voiceprint_top_score,
+      svm.top_speaker_id AS voiceprint_top_speaker_id
+    FROM conversation_segments cs
+    JOIN conversations c ON c.id = cs.conversation_id
+    LEFT JOIN segment_voiceprint_matches svm ON svm.id = (
+      SELECT svm2.id
+      FROM segment_voiceprint_matches svm2
+      WHERE svm2.segment_id = cs.id
+      ORDER BY svm2.created_at DESC
+      LIMIT 1
+    )
+    WHERE cs.speaker_id = ?
+    ORDER BY
+      COALESCE(cs.absolute_end_time, cs.absolute_start_time, c.updated_at, c.created_at) DESC,
+      cs.end_ms DESC,
+      cs.start_ms DESC
+    LIMIT 24
+  `).all(speakerId) as SpeakerMaterialSegment[];
+
+  const candidateMaterials = db.prepare(`
+    SELECT
+      cs.id,
+      cs.conversation_id,
+      COALESCE(c.first_audio_frame_at, c.created_at) AS started_at,
+      c.audio_file_path,
+      cs.start_ms,
+      cs.end_ms,
+      cs.absolute_start_time,
+      cs.absolute_end_time,
+      cs.text,
+      cs.original_speaker_label,
+      cs.speaker_label,
+      cs.speaker_id,
+      cs.speaker_name,
+      cs.resolution_method,
+      cs.confidence,
+      svm.top_score AS voiceprint_top_score,
+      svm.top_speaker_id AS voiceprint_top_speaker_id
+    FROM conversation_segments cs
+    JOIN conversations c ON c.id = cs.conversation_id
+    JOIN segment_voiceprint_matches svm ON svm.id = (
+      SELECT svm2.id
+      FROM segment_voiceprint_matches svm2
+      WHERE svm2.segment_id = cs.id
+      ORDER BY svm2.created_at DESC
+      LIMIT 1
+    )
+    WHERE cs.speaker_id IS NULL
+      AND svm.top_speaker_id = ?
+      AND COALESCE(cs.resolution_method, '') != 'human_segment_excluded'
+    ORDER BY
+      COALESCE(svm.top_score, cs.confidence, 0) DESC,
+      COALESCE(cs.absolute_end_time, cs.absolute_start_time, c.updated_at, c.created_at) DESC
+    LIMIT 24
+  `).all(speakerId) as SpeakerMaterialSegment[];
+
   return {
     speaker,
     recentConversations,
     representativeSegments,
     voiceprintFeatures,
     enrollmentBatches,
+    formalMaterials,
+    candidateMaterials,
   };
 }
 

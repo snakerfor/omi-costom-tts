@@ -3,7 +3,6 @@ import * as path from 'path';
 import { db } from '../../db';
 import { isValidIdentityLabel } from '../../constants/identity-options';
 import { clipsDir } from '../../runtime-paths';
-import { getSpeakerDetail } from '../speaker-service';
 import { prepareEnrollmentAudio, prepareSegmentClip } from './audio-prep';
 import {
   createFeature,
@@ -117,6 +116,20 @@ export interface VoiceprintEnrollmentResult {
   durationMs: number | null;
   audioSizeBytes: number | null;
   errorMessage: string | null;
+}
+
+export interface SpeakerMaterialApplyRequest {
+  speakerId: string;
+  segmentIds?: string[];
+  excludedSegmentIds?: string[];
+}
+
+export interface SpeakerMaterialApplyResult {
+  speakerId: string;
+  processedConversations: number;
+  processedSegmentCount: number;
+  excludedSegmentCount: number;
+  batches: VoiceprintEnrollmentResult[];
 }
 
 export interface ConversationVoiceprintOverview {
@@ -1208,6 +1221,61 @@ export async function enrollFromSegments(input: VoiceprintEnrollmentRequest): Pr
     durationMs: prep.durationMs,
     audioSizeBytes: prep.sizeBytes,
     errorMessage: null,
+  };
+}
+
+export async function applySpeakerMaterials(input: SpeakerMaterialApplyRequest): Promise<SpeakerMaterialApplyResult> {
+  const speakerId = String(input.speakerId || '').trim();
+  if (!speakerId) {
+    throw new Error('speakerId is required');
+  }
+  getSpeakerById(speakerId);
+
+  const includeIds = [...new Set((input.segmentIds || []).map(id => String(id).trim()).filter(Boolean))];
+  const excludeIds = [...new Set((input.excludedSegmentIds || []).map(id => String(id).trim()).filter(Boolean))];
+  if (!includeIds.length && !excludeIds.length) {
+    throw new Error('segmentIds or excludedSegmentIds is required');
+  }
+  const overlap = includeIds.filter(id => excludeIds.includes(id));
+  if (overlap.length) {
+    throw new Error(`segmentIds and excludedSegmentIds overlap: ${overlap.join(', ')}`);
+  }
+
+  const allIds = [...includeIds, ...excludeIds];
+  const rows = db.prepare(`
+    SELECT id, conversation_id
+    FROM conversation_segments
+    WHERE id IN (${allIds.map(() => '?').join(', ')})
+  `).all(...allIds) as Array<{ id: string; conversation_id: string }>;
+  if (rows.length !== allIds.length) {
+    throw new Error('one or more segmentIds do not exist');
+  }
+
+  const byConversation = new Map<string, { segmentIds: string[]; excludedSegmentIds: string[] }>();
+  rows.forEach((row) => {
+    const bucket = byConversation.get(row.conversation_id) || { segmentIds: [], excludedSegmentIds: [] };
+    if (includeIds.includes(row.id)) bucket.segmentIds.push(row.id);
+    if (excludeIds.includes(row.id)) bucket.excludedSegmentIds.push(row.id);
+    byConversation.set(row.conversation_id, bucket);
+  });
+
+  const batches: VoiceprintEnrollmentResult[] = [];
+  for (const [conversationId, group] of byConversation.entries()) {
+    batches.push(await enrollFromSegments({
+      conversationId,
+      segmentIds: group.segmentIds,
+      excludedSegmentIds: group.excludedSegmentIds,
+      speakerMode: 'existing',
+      speakerId,
+    }));
+  }
+
+  return {
+    speakerId,
+    processedConversations: byConversation.size,
+    processedSegmentCount: batches.reduce((sum, batch) => sum + Number(batch.processedSegmentCount || 0), 0),
+    excludedSegmentCount: batches.reduce((sum, batch) => sum + Number(batch.excludedSegmentCount || 0), 0),
+    batches,
   };
 }
 

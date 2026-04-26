@@ -6,7 +6,9 @@
     speakers: [],
     speakerPagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 },
     selectedSpeakerId: null,
+    selectedSpeakerDetail: null,
     speakerEditModalOpen: false,
+    speakerMaterialDraft: null,
     confirmedSpeakerOptions: [],
     conversations: [],
     conversationPagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 },
@@ -22,6 +24,8 @@
     materialSpeakerMode: 'existing',
   };
   let conversationPlaybackStopTimer = null;
+  let speakerPreviewAudio = null;
+  let speakerPreviewStopTimer = null;
   const conversationPlaybackStartOffsetMs = 180;
   const conversationPlaybackEndPaddingMs = 120;
 
@@ -273,6 +277,96 @@
     );
   }
 
+  function materialSegmentLabel(item) {
+    return formatRawSpeakerLabel(item?.original_speaker_label || item?.speaker_label || '') || '未识别片段';
+  }
+
+  function materialTimeLabel(item) {
+    return `${formatSegmentClock(item?.start_ms)} - ${formatSegmentClock(item?.end_ms)}`;
+  }
+
+  function summarizeSpeakerMaterialDraft(draft) {
+    const items = draft?.items || [];
+    const formalItems = items.filter((item) => item.bucket === 'formal');
+    const candidateItems = items.filter((item) => item.bucket === 'candidate');
+    const formalDurationMs = formalItems.reduce((sum, item) => sum + Math.max(0, Number(item.end_ms || 0) - Number(item.start_ms || 0)), 0);
+    const candidateDurationMs = candidateItems.reduce((sum, item) => sum + Math.max(0, Number(item.end_ms || 0) - Number(item.start_ms || 0)), 0);
+    return {
+      formalItems,
+      candidateItems,
+      formalDurationMs,
+      candidateDurationMs,
+    };
+  }
+
+  function initializeSpeakerMaterialDraft(detail) {
+    const seen = new Set();
+    const items = [];
+    (detail.formalMaterials || []).forEach((item) => {
+      if (seen.has(item.id)) return;
+      seen.add(item.id);
+      items.push({ ...item, bucket: 'formal' });
+    });
+    (detail.candidateMaterials || []).forEach((item) => {
+      if (seen.has(item.id)) return;
+      seen.add(item.id);
+      items.push({ ...item, bucket: 'candidate' });
+    });
+    state.speakerMaterialDraft = {
+      speakerId: detail.speaker.id,
+      originalFormalIds: new Set((detail.formalMaterials || []).map((item) => item.id)),
+      items,
+    };
+  }
+
+  function clearSpeakerPreviewPlayback() {
+    if (speakerPreviewStopTimer) {
+      window.clearTimeout(speakerPreviewStopTimer);
+      speakerPreviewStopTimer = null;
+    }
+    if (speakerPreviewAudio) {
+      speakerPreviewAudio.pause();
+      speakerPreviewAudio = null;
+    }
+  }
+
+  function playSpeakerMaterial(item) {
+    if (!item?.audio_file_url) {
+      throw new Error('该片段没有可播放音频');
+    }
+    clearSpeakerPreviewPlayback();
+    const audio = new Audio(item.audio_file_url);
+    speakerPreviewAudio = audio;
+    const startSec = Math.max(0, (Number(item.start_ms || 0) + conversationPlaybackStartOffsetMs) / 1000);
+    const endSec = Math.max(startSec, (Number(item.end_ms || 0) + conversationPlaybackStartOffsetMs + conversationPlaybackEndPaddingMs) / 1000);
+    const startPlayback = () => {
+      audio.currentTime = startSec;
+      void audio.play().catch(showError);
+      speakerPreviewStopTimer = window.setTimeout(() => {
+        audio.pause();
+        audio.currentTime = endSec;
+      }, Math.max(200, Math.round((endSec - startSec) * 1000) + 120));
+    };
+    audio.addEventListener('loadedmetadata', startPlayback, { once: true });
+    audio.load();
+  }
+
+  function moveSpeakerMaterial(id, bucket) {
+    if (!state.speakerMaterialDraft) return;
+    const target = state.speakerMaterialDraft.items.find((item) => item.id === id);
+    if (!target) return;
+    target.bucket = bucket;
+    renderSpeakerMaterials();
+  }
+
+  function promoteAllCandidateMaterials() {
+    if (!state.speakerMaterialDraft) return;
+    state.speakerMaterialDraft.items.forEach((item) => {
+      if (item.bucket === 'candidate') item.bucket = 'formal';
+    });
+    renderSpeakerMaterials();
+  }
+
   function conversationDisplaySpeaker(segment) {
     if (segment?.speaker_id || segment?.speaker_name) {
       return segment.speaker_name || segment.display_name || segment.speaker_label || '未知发言人';
@@ -493,16 +587,15 @@
       ? state.speakers.map((item) => `
         <article class="list-item ${item.id === state.selectedSpeakerId ? 'active' : ''}" data-speaker-id="${item.id}">
           <div class="speaker-list-row">
+            <div class="speaker-list-avatar ${item.id === state.selectedSpeakerId ? 'is-active' : ''}">${escapeHtml((speakerDisplayName(item).trim()[0] || '?').toUpperCase())}</div>
             <div class="speaker-list-main">
               <strong>${highlightText(speakerDisplayName(item), keyword)}</strong>
               <span class="subtle">${highlightText(item.identity_label || '身份未确认', keyword)}</span>
             </div>
             <div class="speaker-list-meta subtle">
-              <span>${escapeHtml(formatDate(item.last_seen_at || item.created_at))}</span>
               <button type="button" class="inline-action compact-action secondary-button" data-edit-speaker="${escapeHtml(item.id)}">编辑</button>
             </div>
           </div>
-          <p class="conversation-list-preview">${highlightText((item.sample_text || '').slice(0, 80) || '暂无样本文本', keyword)}</p>
         </article>
       `).join('')
       : '<p class="subtle">没有匹配的正式发言人。</p>';
@@ -523,6 +616,9 @@
   }
 
   function resetSpeakerDetail() {
+    state.selectedSpeakerDetail = null;
+    state.speakerMaterialDraft = null;
+    clearSpeakerPreviewPlayback();
     qs('#speaker-empty').classList.remove('hidden');
     qs('#speaker-detail').classList.add('hidden');
     closeSpeakerEditModal();
@@ -533,14 +629,10 @@
     const params = new URLSearchParams();
     const q = qs('#speaker-q').value.trim();
     const confirmation = qs('#speaker-confirmation').value || 'confirmed';
-    const start = qs('#speaker-start').value;
-    const end = qs('#speaker-end').value;
     const pageSize = Number(qs('#speaker-page-size').value || '20');
 
     if (q) params.set('q', q);
     params.set('confirmation', confirmation);
-    if (start) params.set('start_time', new Date(start).toISOString());
-    if (end) params.set('end_time', new Date(end).toISOString());
     params.set('page', String(state.speakerPagination.page));
     params.set('page_size', String(pageSize));
 
@@ -566,23 +658,19 @@
   }
 
   function renderSpeakerDetail(detail) {
+    state.selectedSpeakerDetail = detail;
+    initializeSpeakerMaterialDraft(detail);
     qs('#speaker-empty').classList.add('hidden');
     qs('#speaker-detail').classList.remove('hidden');
     qs('#speaker-detail-title').textContent = speakerDisplayName(detail.speaker);
-    qs('#speaker-detail-badges').innerHTML = speakerBadges(detail.speaker);
-    qs('#speaker-id').textContent = detail.speaker.id;
-    qs('#speaker-first-seen').textContent = formatDate(detail.speaker.first_seen_at);
-    qs('#speaker-last-seen').textContent = formatDate(detail.speaker.last_seen_at);
-    qs('#speaker-conv-count').textContent = detail.speaker.conversation_count;
-    qs('#speaker-seg-count').textContent = detail.speaker.segment_count;
     qs('#speaker-form-name').value = detail.speaker.name || '';
     qs('#speaker-form-identity').value = detail.speaker.identity_label || '';
     qs('#speaker-form-notes').value = detail.speaker.notes || '';
     qs('#speaker-edit-modal-title').textContent = `编辑 ${speakerDisplayName(detail.speaker)}`;
     qs('#speaker-confirm-summary').innerHTML = `
-      <span><strong>姓名</strong>${escapeHtml(detail.speaker.name || '未确认')}</span>
       <span><strong>身份</strong>${escapeHtml(detail.speaker.identity_label || '未确认')}</span>
       <span><strong>备注</strong>${escapeHtml(detail.speaker.notes || '无')}</span>
+      <span><strong>说明</strong>当前优先管理正式语料与候选语料，基础信息单独保存。</span>
     `;
 
     qs('#speaker-recent-conversations').innerHTML = detail.recentConversations.length
@@ -610,64 +698,73 @@
       });
     });
 
-    renderSpeakerVoiceprintAssets(detail);
+    renderSpeakerMaterials();
   }
 
-  function renderSpeakerVoiceprintAssets(detail) {
-    const targets = ['#speaker-voiceprint-assets-main', '#speaker-voiceprint-assets']
-      .map((selector) => qs(selector))
-      .filter(Boolean);
-    if (!targets.length) return;
-    const batches = detail.enrollmentBatches || [];
-    const features = detail.voiceprintFeatures || [];
-    const latestUpdate = [...features.map((item) => item.updated_at), ...batches.map((item) => item.created_at)]
-      .filter(Boolean)
-      .sort()
-      .pop();
-    const featureCountEl = qs('#speaker-feature-count');
-    const batchCountEl = qs('#speaker-batch-count');
-    const updatedEl = qs('#speaker-material-updated');
-    if (featureCountEl) featureCountEl.textContent = String(features.length);
-    if (batchCountEl) batchCountEl.textContent = String(batches.length);
-    if (updatedEl) updatedEl.textContent = latestUpdate ? formatDate(latestUpdate) : '-';
-    const featureHtml = features.length
-      ? features.map((feature) => `
-        <article class="segment-item compact-segment material-record">
-          <div class="segment-title">
-            <span>${escapeHtml(feature.provider)} / ${escapeHtml(feature.feature_id)}</span>
-            <span class="badge ${feature.status === 'active' ? '' : 'warning'}">${escapeHtml(feature.status)}</span>
-          </div>
-          <p class="subtle">版本 ${feature.feature_version}，分组 ${escapeHtml(feature.group_id)}，更新 ${escapeHtml(formatDate(feature.updated_at))}</p>
-        </article>
-      `).join('')
-      : '<p class="subtle">暂无讯飞 active feature。</p>';
-    const batchHtml = batches.length
-      ? batches.map((batch) => `
-        <article class="segment-item compact-segment material-record">
-          <div class="segment-title">
-            <span>${escapeHtml(batch.action)} · ${escapeHtml(formatDate(batch.created_at))}</span>
-            <span class="badge ${batch.status === 'success' ? '' : 'danger'}">${escapeHtml(batch.status)}</span>
-          </div>
-          <p class="subtle">片段 ${batch.segment_count || 0}，时长 ${escapeHtml(formatSegmentSeconds(batch.duration_ms || 0))}，feature ${escapeHtml(batch.feature_id || '-')}</p>
-          ${batch.audio_url ? `<audio controls src="${escapeHtml(batch.audio_url)}"></audio>` : ''}
-          ${batch.error_message ? `<p class="danger-text">${escapeHtml(batch.error_message)}</p>` : ''}
-        </article>
-      `).join('')
-      : '<p class="subtle">暂无注册/更新批次。需要在对话记录里选择片段后更新已有发言人语料。</p>';
-    const html = `
-      <div class="voiceprint-assets-grid">
-        <section>
-          <h4>当前 Feature</h4>
-          ${featureHtml}
-        </section>
-        <section>
-          <h4>注册/更新批次</h4>
-          ${batchHtml}
-        </section>
-      </div>
+  function renderSpeakerMaterials() {
+    const draft = state.speakerMaterialDraft;
+    if (!draft) return;
+    const summary = summarizeSpeakerMaterialDraft(draft);
+    qs('#speaker-formal-title').textContent = `正式语料 ${summary.formalItems.length}`;
+    qs('#speaker-candidate-title').textContent = `候选语料 ${summary.candidateItems.length}`;
+    qs('#speaker-material-summary').innerHTML = `
+      <div><span class="meta-label">预算概览</span><strong>${summary.formalItems.length + summary.candidateItems.length} 段 · ${formatSegmentSeconds(summary.formalDurationMs + summary.candidateDurationMs)}</strong></div>
+      <div><span class="meta-label">正式 / 候选</span><strong>正式 ${summary.formalItems.length} 段 / 候选 ${summary.candidateItems.length} 段</strong></div>
+      <div><span class="meta-label">同步说明</span><strong>仅正式语料会写入讯飞 Feature</strong></div>
     `;
-    targets.forEach((target) => {
-      target.innerHTML = html;
+
+    const renderItem = (item, mode) => `
+      <article class="segment-item speaker-material-item">
+        <div class="segment-title">
+          <div class="speaker-material-title">
+            <strong>${escapeHtml(materialSegmentLabel(item))}</strong>
+            <span class="subtle">${escapeHtml(formatDate(item.started_at))} · ${escapeHtml(materialTimeLabel(item))}</span>
+          </div>
+          <span class="badge ${segmentStatusMeta(item).className || 'neutral'}">${escapeHtml(segmentStatusMeta(item).label)}</span>
+        </div>
+        <p>${escapeHtml(item.text || '暂无转录文本')}</p>
+        <div class="speaker-material-footer">
+          <span class="subtle">${mode === 'formal'
+            ? `${Math.max(0, Number(item.text?.length || 0))} 字 · ${formatSegmentSeconds(Math.max(0, Number(item.end_ms || 0) - Number(item.start_ms || 0)))}`
+            : `${Math.max(0, Number(item.text?.length || 0))} 字 · ${formatSegmentSeconds(Math.max(0, Number(item.end_ms || 0) - Number(item.start_ms || 0)))} · 候选命中 ${formatScore(item.voiceprint_top_score)}`}</span>
+          <div class="speaker-material-actions">
+            <button type="button" class="inline-action secondary-button" data-speaker-material-play="${escapeHtml(item.id)}">试听</button>
+            <button type="button" class="inline-action secondary-button" data-open-conversation="${escapeHtml(item.conversation_id)}">查看对话</button>
+            ${mode === 'formal'
+              ? `<button type="button" class="inline-action secondary-button" data-speaker-material-demote="${escapeHtml(item.id)}">移回候选</button>`
+              : `<button type="button" data-speaker-material-promote="${escapeHtml(item.id)}">转正式</button>`}
+          </div>
+        </div>
+      </article>
+    `;
+
+    qs('#speaker-formal-materials').innerHTML = summary.formalItems.length
+      ? summary.formalItems.map((item) => renderItem(item, 'formal')).join('')
+      : '<p class="subtle">暂无正式语料。可以先从右侧候选语料中转入。</p>';
+    qs('#speaker-candidate-materials').innerHTML = summary.candidateItems.length
+      ? summary.candidateItems.map((item) => renderItem(item, 'candidate')).join('')
+      : '<p class="subtle">暂无候选语料。可以先到对话记录页勾选片段加入候选语料。</p>';
+
+    document.querySelectorAll('[data-speaker-material-play]').forEach((node) => {
+      node.addEventListener('click', () => {
+        const id = node.getAttribute('data-speaker-material-play');
+        const item = draft.items.find((entry) => entry.id === id);
+        if (!item) return;
+        playSpeakerMaterial(item);
+      });
+    });
+    document.querySelectorAll('[data-speaker-material-promote]').forEach((node) => {
+      node.addEventListener('click', () => moveSpeakerMaterial(node.getAttribute('data-speaker-material-promote'), 'formal'));
+    });
+    document.querySelectorAll('[data-speaker-material-demote]').forEach((node) => {
+      node.addEventListener('click', () => moveSpeakerMaterial(node.getAttribute('data-speaker-material-demote'), 'candidate'));
+    });
+    document.querySelectorAll('#speaker-formal-materials [data-open-conversation], #speaker-candidate-materials [data-open-conversation]').forEach((node) => {
+      node.addEventListener('click', () => {
+        switchTab('conversations');
+        state.selectedConversationId = node.getAttribute('data-open-conversation');
+        loadConversations(false).catch(showError);
+      });
     });
   }
 
@@ -675,6 +772,30 @@
     if (!speakerId) return;
     const result = await apiGet(`/api/speakers/${speakerId}`);
     renderSpeakerDetail(result.data);
+  }
+
+  async function saveSpeakerMaterials() {
+    const draft = state.speakerMaterialDraft;
+    if (!draft || !state.selectedSpeakerId) {
+      throw new Error('请先选择正式发言人');
+    }
+    const currentFormalIds = draft.items.filter((item) => item.bucket === 'formal').map((item) => item.id);
+    const currentFormalSet = new Set(currentFormalIds);
+    const originalFormalIds = draft.originalFormalIds || new Set();
+    const addedIds = currentFormalIds.filter((id) => !originalFormalIds.has(id));
+    const removedIds = [...originalFormalIds].filter((id) => !currentFormalSet.has(id));
+    if (!addedIds.length && !removedIds.length) {
+      window.alert('当前没有语料变更需要保存。');
+      return;
+    }
+    const result = await apiSend(`/api/admin/speakers/${encodeURIComponent(state.selectedSpeakerId)}/materials/apply`, 'POST', {
+      segmentIds: addedIds,
+      excludedSegmentIds: removedIds,
+    });
+    window.alert(`更新完成：新增正式语料 ${result.data.processedSegmentCount} 段，移出 ${result.data.excludedSegmentCount} 段，处理会话 ${result.data.processedConversations} 个。`);
+    await loadSpeakerDetail(state.selectedSpeakerId);
+    await loadConfirmedSpeakerOptions();
+    await loadConversations(false);
   }
 
   function renderConversationPagination() {
@@ -1334,7 +1455,7 @@
     if (title && subtitle) {
       if (tabName === 'directory') {
         title.textContent = 'OMI Speaker Admin';
-        subtitle.textContent = '正式发言人 · 基础信息与声纹语料';
+        subtitle.textContent = '基础信息 · 声纹语料 · 更新讯飞';
       } else {
         title.textContent = 'OMI Speaker Admin';
         subtitle.textContent = tabName === 'systems' ? '系统工具 · 记忆同步与补充' : '转录核对 · 声纹语料工作台';
@@ -1470,6 +1591,8 @@
       if (!state.selectedSpeakerId) return;
       openSpeakerEditModal(state.selectedSpeakerId).catch(showError);
     });
+    qs('#speaker-material-save').addEventListener('click', () => saveSpeakerMaterials().catch(showError));
+    qs('#speaker-candidate-promote-all').addEventListener('click', () => promoteAllCandidateMaterials());
     qs('#speaker-page-size').addEventListener('change', () => loadSpeakers(true).catch(showError));
     qs('#speaker-prev-page').addEventListener('click', () => {
       if (state.speakerPagination.page <= 1) return;

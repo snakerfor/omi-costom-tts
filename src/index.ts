@@ -48,6 +48,7 @@ import {
 import { getSpeakerCandidateDetail, listPendingSpeakerCandidates } from './services/speaker-candidate-query-service';
 import { confirmCandidate, saveCandidateDecisions } from './services/speaker-candidate-confirm-service';
 import {
+  applySpeakerMaterials,
   backfillConversationVoiceprintSegments,
   enrollFromSegments,
   getPendingSegments,
@@ -443,6 +444,25 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, urlOb
     return true;
   }
 
+  if (req.method === 'POST' && /^\/api\/admin\/speakers\/[^/]+\/materials\/apply$/.test(urlObj.pathname)) {
+    const speakerId = decodeURIComponent(urlObj.pathname.split('/')[4] || '');
+    const body = await readJsonBody<{
+      segmentIds?: string[];
+      excludedSegmentIds?: string[];
+    }>(req);
+    try {
+      const result = await applySpeakerMaterials({
+        speakerId,
+        segmentIds: Array.isArray(body.segmentIds) ? body.segmentIds : [],
+        excludedSegmentIds: Array.isArray(body.excludedSegmentIds) ? body.excludedSegmentIds : [],
+      });
+      sendJson(res, 200, { ok: true, data: result });
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: String((err as Error)?.message ?? err) });
+    }
+    return true;
+  }
+
   if (req.method === 'GET' && urlObj.pathname === '/api/knowledge/memories/status') {
     sendJson(res, 200, { ok: true, data: getKnowledgeMemoryStatus() });
     return true;
@@ -504,6 +524,14 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, urlOb
         enrollmentBatches: detail.enrollmentBatches.map(batch => ({
           ...batch,
           audio_url: toMediaUrl(batch.audio_path),
+        })),
+        formalMaterials: detail.formalMaterials.map(item => ({
+          ...item,
+          audio_file_url: toMediaUrl(item.audio_file_path),
+        })),
+        candidateMaterials: detail.candidateMaterials.map(item => ({
+          ...item,
+          audio_file_url: toMediaUrl(item.audio_file_path),
         })),
       },
     });
