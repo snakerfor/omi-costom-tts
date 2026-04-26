@@ -4,49 +4,52 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OMI Speaker Admin</title>
-    <link rel="stylesheet" href="/admin/styles.css" />
+    <link rel="stylesheet" href="/admin/styles.css?v=20260426-13" />
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">OMI Custom STT</p>
-          <h1>发言人管理后台</h1>
+          <h1 id="app-title">OMI Speaker Admin</h1>
+          <p id="app-subtitle">转录核对 · 声纹语料工作台</p>
         </div>
-        <div class="topbar-stats">
-          <span class="stat-chip">已确认发言人 <strong id="stat-confirmed-speakers">0</strong></span>
+        <div class="topbar-actions">
+          <nav class="tabs" aria-label="后台模块">
+            <button class="tab-button active" data-tab="conversations">对话记录</button>
+            <button class="tab-button" data-tab="directory">正式发言人</button>
+            <button class="tab-button" data-tab="systems">系统工具</button>
+          </nav>
+          <span class="stat-chip">线上 · 健康</span>
+          <span class="stat-chip admin-stat-chip">已确认发言人 <strong id="stat-confirmed-speakers">0</strong></span>
         </div>
       </header>
 
-      <nav class="tabs">
-        <button class="tab-button active" data-tab="conversations">对话记录</button>
-        <button class="tab-button" data-tab="directory">正式发言人</button>
-        <button class="tab-button" data-tab="systems">系统工具</button>
-      </nav>
-
       <main>
         <section class="tab-panel active" id="tab-conversations">
-          <div class="toolbar">
-            <input id="conv-keyword" type="search" placeholder="搜索会话关键词" />
-            <select id="conv-identity-label">
-              <option value="">全部关键人物身份</option>
-            </select>
-            <select id="conv-status">
-              <option value="">全部状态</option>
-              <option value="completed">已完成</option>
-              <option value="recording">录制中</option>
-              <option value="failed">失败</option>
-            </select>
-            <input id="conv-start" type="datetime-local" />
-            <input id="conv-end" type="datetime-local" />
-            <button id="conv-search">查询</button>
-          </div>
-
-          <div class="two-column">
-            <section class="card list-card">
+          <div class="conversation-workspace">
+            <section class="card list-card conversation-sidebar">
               <div class="card-header">
-                <h2>会话列表</h2>
-                <span id="conversation-list-count" class="subtle"></span>
+                <h2>对话记录</h2>
+              </div>
+              <div class="toolbar sidebar-toolbar">
+                <input id="conv-keyword" type="search" placeholder="搜索 transcript 关键词" />
+                <select id="conv-speaker-filter">
+                  <option value="">正式发言人：全部</option>
+                </select>
+                <select id="conv-identity-label">
+                  <option value="">身份：全部</option>
+                </select>
+                <select id="conv-status">
+                  <option value="">状态：全部</option>
+                  <option value="completed">已完成</option>
+                  <option value="recording">录制中</option>
+                  <option value="failed">失败</option>
+                </select>
+                <div class="date-filter-row">
+                  <input id="conv-start" type="datetime-local" />
+                  <input id="conv-end" type="datetime-local" />
+                </div>
+                <button id="conv-search" class="hidden">查询</button>
               </div>
               <div id="conversation-list" class="list"></div>
               <div class="pagination">
@@ -61,117 +64,152 @@
               </div>
             </section>
 
-            <section class="card detail-card">
+            <section class="card detail-card transcript-workspace">
               <div id="conversation-empty" class="empty-state">选择一个会话后查看 transcript 和发言人补全工作区。</div>
               <div id="conversation-detail" class="detail hidden">
-                <div class="detail-header">
-                  <div>
-                    <p class="eyebrow">会话详情</p>
-                    <h2 id="conversation-title">-</h2>
+                <div class="conversation-detail-head">
+                  <div class="conversation-detail-top">
+                    <div class="conversation-title-block">
+                      <p class="eyebrow">会话详情 · <span id="conversation-date-label">-</span></p>
+                      <h2 id="conversation-title">-</h2>
+                    </div>
+                    <div id="conversation-detail-badges" class="conversation-detail-badges"></div>
                   </div>
-                </div>
-
-                <div class="meta-grid">
-                  <div><span class="meta-label">Session ID</span><span id="conversation-session-id"></span></div>
-                  <div><span class="meta-label">状态</span><span id="conversation-status"></span></div>
-                  <div><span class="meta-label">开始时间</span><span id="conversation-started-at"></span></div>
-                  <div><span class="meta-label">结束时间</span><span id="conversation-ended-at"></span></div>
-                  <div><span class="meta-label">发言人</span><span id="conversation-speaker-count"></span></div>
-                  <div><span class="meta-label">片段数</span><span id="conversation-segment-count"></span></div>
+                  <audio id="conversation-audio-player" controls class="hidden conversation-audio-player"></audio>
+                  <p id="conversation-audio-empty" class="subtle hidden">当前会话没有可播放音频。</p>
+                  <div class="hidden conversation-legacy-meta">
+                    <span id="conversation-session-id"></span>
+                    <span id="conversation-status"></span>
+                    <span id="conversation-started-at"></span>
+                    <span id="conversation-ended-at"></span>
+                    <span id="conversation-speaker-count"></span>
+                    <span id="conversation-segment-count"></span>
+                  </div>
                 </div>
                 <div id="conversation-error-banner" class="detail-alert detail-alert-danger hidden"></div>
 
-                <div class="detail-section">
-                  <div class="conversation-workbench-header">
-                    <div>
-                      <h3>参与者概览</h3>
-                      <p class="subtle">按当前会话内发言人汇总。点击某行可过滤 transcript。</p>
-                    </div>
-                    <div class="badge-row">
-                      <button id="conversation-clear-speaker-filter" type="button" class="secondary-button">查看全部</button>
-                    </div>
-                  </div>
+                <div class="conversation-speakers-wrap">
                   <div id="conversation-speakers" class="segment-list"></div>
+                  <button id="conversation-clear-speaker-filter" type="button" class="speaker-more-button">+2</button>
                 </div>
 
-                <div class="detail-section">
-                  <div class="conversation-workbench-header">
-                    <div>
-                      <h3>发言人补全</h3>
-                      <p class="subtle">先在 transcript 勾选片段，再打开弹窗补充发言人信息或更新已有语料。</p>
-                    </div>
-                    <div class="badge-row">
-                      <span class="badge">已选 <strong id="conversation-selected-count">0</strong></span>
-                      <span class="badge">已选时长 <strong id="conversation-selected-duration">0.0s</strong></span>
-                      <span class="badge">涉及标签 <strong id="conversation-selected-labels">-</strong></span>
-                    </div>
+                <div class="transcript-toolbar">
+                  <div class="transcript-title-block">
+                    <h3>Transcript</h3>
+                    <p class="subtle">已选 <span id="conversation-toolbar-selected-count">0</span> 段 · 约 <span id="conversation-toolbar-selected-duration">0.0s</span></p>
                   </div>
-                  <audio id="conversation-audio-player" controls class="hidden conversation-audio-player"></audio>
-                  <p id="conversation-audio-empty" class="subtle">当前会话没有可播放音频。</p>
-                  <div class="actions conversation-voiceprint-actions">
-                    <button id="conversation-open-modal" type="button">补全发言人信息</button>
-                    <button id="conversation-backfill" type="button" class="secondary-button">刷新对话</button>
-                    <button id="conversation-clear-selection" type="button" class="secondary-button">清空选择</button>
-                  </div>
-                </div>
-
-                <div class="detail-section">
-                  <div class="conversation-workbench-header">
-                    <div>
-                      <h3>Transcript</h3>
-                      <p class="subtle transcript-help">按发言人和录音时间核对片段。相对时间与上方播放器一致。</p>
-                    </div>
-                  </div>
-                  <div class="transcript-toolbar">
+                  <div class="transcript-filter-group">
                     <label>
-                      <span>发言人</span>
+                      <span>发言人筛选</span>
                       <select id="conversation-segment-speaker-filter">
                         <option value="">全部发言人</option>
                       </select>
                     </label>
                     <label>
-                      <span>分页</span>
-                      <select id="conversation-segment-page-size">
-                        <option value="30" selected>30 条/页</option>
-                        <option value="60">60 条/页</option>
-                        <option value="120">120 条/页</option>
+                      <span>状态筛选</span>
+                      <select id="conversation-segment-status-filter">
+                        <option value="">全部状态</option>
+                        <option value="confirmed">已实名</option>
+                        <option value="low">低置信</option>
+                        <option value="no_match">未命中</option>
+                        <option value="error">错误</option>
+                        <option value="short">片段过短</option>
                       </select>
                     </label>
-                    <div class="transcript-page-actions">
-                      <button id="conversation-segment-prev-page" type="button" class="secondary-button">上一页</button>
-                      <span id="conversation-segment-pagination" class="subtle">第 1 / 1 页</span>
-                      <button id="conversation-segment-next-page" type="button" class="secondary-button">下一页</button>
-                    </div>
                   </div>
-                  <div id="conversation-segments" class="segment-list transcript-list"></div>
+                  <label class="hide-short-field">
+                    <input id="conversation-hide-short" type="checkbox" />
+                    <span>隐藏过短</span>
+                  </label>
+                  <span id="conversation-segment-pagination" class="subtle hidden">1 / 1</span>
+                  <button id="conversation-open-modal" type="button">加入候选语料</button>
+                  <select id="conversation-segment-page-size" class="hidden">
+                    <option value="30" selected>30 条/页</option>
+                    <option value="60">60 条/页</option>
+                    <option value="120">120 条/页</option>
+                  </select>
+                  <div class="hidden">
+                    <button id="conversation-segment-prev-page" type="button" class="secondary-button">上一页</button>
+                    <button id="conversation-segment-next-page" type="button" class="secondary-button">下一页</button>
+                  </div>
                 </div>
+                <div id="conversation-segments" class="segment-list transcript-list"></div>
               </div>
             </section>
+
+            <aside class="card material-panel">
+              <div class="material-panel-header">
+                <h2>加入候选语料</h2>
+                <button id="material-drawer-close" type="button" class="secondary-button drawer-close-button">× 关闭</button>
+              </div>
+              <div class="material-summary">
+                <strong>已选 <span id="conversation-selected-count">0</span> 段 · <span id="conversation-selected-duration">0.0s</span></strong>
+                <p>已自动排除 <span id="conversation-excluded-short-count">0</span> 条过短片段；本操作不会更新讯飞。</p>
+              </div>
+              <div class="material-mode-tabs">
+                <button type="button" class="active" data-material-mode="existing">已有发言人</button>
+                <button type="button" data-material-mode="new">新建发言人</button>
+              </div>
+              <div id="material-existing-fields" class="material-field-stack">
+                <label class="material-target-field">
+                  <span>选择正式发言人</span>
+                  <select id="conversation-material-target">
+                    <option>李四 / 同事</option>
+                  </select>
+                </label>
+              </div>
+              <div id="material-new-fields" class="material-field-stack hidden">
+                <label class="material-target-field">
+                  <span>发言人姓名</span>
+                  <input id="conversation-material-new-name" type="text" placeholder="例如：王五" />
+                </label>
+                <label class="material-target-field">
+                  <span>身份</span>
+                  <select id="conversation-material-new-identity">
+                    <option value="">未确认</option>
+                  </select>
+                </label>
+                <label class="material-target-field">
+                  <span>备注</span>
+                  <textarea id="conversation-material-new-note" rows="3" placeholder="补充来源、关系或识别依据"></textarea>
+                </label>
+              </div>
+              <div class="material-note">
+                <strong>待加入片段预览</strong>
+                <p id="conversation-selected-labels">-</p>
+                <div id="conversation-selected-preview" class="material-preview">尚未选择片段。</div>
+              </div>
+              <div class="material-actions">
+                <button id="conversation-confirm-material" type="button">确认加入候选语料</button>
+                <button id="conversation-backfill" type="button" class="secondary-button">刷新对话</button>
+                <button id="conversation-clear-selection" type="button" class="secondary-button">清空选择</button>
+              </div>
+            </aside>
+            <div id="material-drawer-backdrop" class="material-drawer-backdrop" aria-hidden="true"></div>
           </div>
         </section>
 
         <section class="tab-panel" id="tab-directory">
-          <div class="toolbar">
-            <input id="speaker-q" type="search" placeholder="搜索姓名、标签、身份、样本文本" />
-            <select id="speaker-confirmation">
-              <option value="confirmed" selected>仅正式发言人</option>
-              <option value="all">全部</option>
-            </select>
-            <input id="speaker-start" type="datetime-local" />
-            <input id="speaker-end" type="datetime-local" />
-            <select id="speaker-page-size">
-              <option value="10">每页 10 条</option>
-              <option value="20" selected>每页 20 条</option>
-              <option value="50">每页 50 条</option>
-            </select>
-            <button id="speaker-search">查询</button>
-          </div>
-
-          <div class="two-column">
+          <div class="two-column speaker-workspace">
             <section class="card list-card">
               <div class="card-header">
                 <h2>正式发言人</h2>
                 <span id="speaker-list-count" class="subtle"></span>
+              </div>
+              <div class="toolbar sidebar-toolbar">
+                <input id="speaker-q" type="search" placeholder="搜索姓名、标签、身份、样本文本" />
+                <select id="speaker-confirmation">
+                  <option value="confirmed" selected>仅正式发言人</option>
+                  <option value="all">全部</option>
+                </select>
+                <input id="speaker-start" type="date" />
+                <input id="speaker-end" type="date" />
+                <select id="speaker-page-size">
+                  <option value="10">每页 10 条</option>
+                  <option value="20" selected>每页 20 条</option>
+                  <option value="50">每页 50 条</option>
+                </select>
+                <button id="speaker-search">查询</button>
               </div>
               <div id="speaker-list" class="list"></div>
               <div class="pagination">
@@ -191,6 +229,7 @@
                   </div>
                   <div class="speaker-detail-actions">
                     <div id="speaker-detail-badges" class="badge-row"></div>
+                    <button id="speaker-detail-edit" type="button" class="secondary-button">编辑基础信息</button>
                   </div>
                 </div>
 
@@ -205,7 +244,36 @@
                 </div>
 
                 <div class="detail-section">
-                  <h3>最近会话</h3>
+                  <div class="section-title-row">
+                    <div>
+                      <h3>讯飞声纹语料</h3>
+                      <p class="subtle">只展示已注册 Feature 和最近注册/更新批次。新增语料需要从对话记录中勾选片段。</p>
+                    </div>
+                  </div>
+                  <div class="speaker-material-budget">
+                    <div>
+                      <span class="meta-label">Active Feature</span>
+                      <strong id="speaker-feature-count">0</strong>
+                    </div>
+                    <div>
+                      <span class="meta-label">注册/更新批次</span>
+                      <strong id="speaker-batch-count">0</strong>
+                    </div>
+                    <div>
+                      <span class="meta-label">最近更新</span>
+                      <strong id="speaker-material-updated">-</strong>
+                    </div>
+                  </div>
+                  <div id="speaker-voiceprint-assets-main" class="segment-list speaker-material-list"></div>
+                </div>
+
+                <div class="detail-section">
+                  <div class="section-title-row">
+                    <div>
+                      <h3>最近会话</h3>
+                      <p class="subtle">用于回到原始 transcript 继续补充或复核语料。</p>
+                    </div>
+                  </div>
                   <div id="speaker-recent-conversations" class="segment-list"></div>
                 </div>
               </div>
@@ -217,15 +285,15 @@
           <section class="memory-panel systems-panel">
             <div class="memory-panel-header">
               <div>
-                <p class="eyebrow">System Tools</p>
+                <p class="eyebrow">系统工具</p>
                 <h2>记忆同步与补充</h2>
               </div>
               <div id="memory-job-badge" class="badge-row"></div>
             </div>
             <div class="memory-stats">
-              <div class="memory-stat-card"><span class="meta-label">OMI Memories</span><strong id="memory-omi-count">0</strong></div>
-              <div class="memory-stat-card"><span class="meta-label">Knowledge Memories</span><strong id="memory-knowledge-count">0</strong></div>
-              <div class="memory-stat-card"><span class="meta-label">待处理 Candidates</span><strong id="memory-candidate-count">0</strong></div>
+              <div class="memory-stat-card"><span class="meta-label">OMI 记忆数</span><strong id="memory-omi-count">0</strong></div>
+              <div class="memory-stat-card"><span class="meta-label">知识库记忆数</span><strong id="memory-knowledge-count">0</strong></div>
+              <div class="memory-stat-card"><span class="meta-label">待处理候选项</span><strong id="memory-candidate-count">0</strong></div>
             </div>
             <div class="memory-actions">
               <label class="toggle-field">
@@ -233,7 +301,7 @@
                 <span>启用 AI 补充入口（默认关闭）</span>
               </label>
               <input id="memory-api-key" type="password" placeholder="临时 MiniMax API Key（可选，不保存）" />
-              <button id="memory-sync-omi" type="button" class="secondary-button">同步 OMI Memories 到 Knowledge</button>
+              <button id="memory-sync-omi" type="button" class="secondary-button">同步 OMI 记忆到知识库</button>
               <button id="memory-run-ai" type="button">执行 AI 补充</button>
             </div>
             <div class="memory-meta">
@@ -338,6 +406,6 @@
       </div>
     </div>
 
-    <script src="/admin/app.js"></script>
+    <script src="/admin/app.js?v=20260426-13"></script>
   </body>
 </html>

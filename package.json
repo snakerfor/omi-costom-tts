@@ -21,6 +21,7 @@
     "rebuild:memories": "ts-node scripts/rebuild-knowledge-memories.ts",
     "rebuild:all-knowledge": "ts-node scripts/rebuild-knowledge-events.ts && ts-node scripts/rebuild-knowledge-conversations.ts && ts-node scripts/rebuild-knowledge-memories.ts",
     "audit:speakers": "ts-node scripts/audit-speaker-inventory.ts",
+    "cleanup:legacy-speaker-identity": "ts-node scripts/cleanup-legacy-speaker-identity.ts",
     "backfill:speaker-window": "ts-node scripts/backfill-speaker-window.ts",
     "seed:candidates": "ts-node scripts/generate-seed-candidates.ts",
     "rebuild:confirmed-embeddings": "ts-node scripts/rebuild-confirmed-embeddings.ts",

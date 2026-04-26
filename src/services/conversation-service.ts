@@ -8,6 +8,7 @@ export interface ConversationListFilters {
   startTime?: string;
   endTime?: string;
   status?: string;
+  hasSegments?: 'all' | 'true' | 'false';
   hasUnconfirmedSpeakers?: 'all' | 'true' | 'false';
   page?: number;
   pageSize?: number;
@@ -29,6 +30,10 @@ export interface ConversationListRow {
   speaker_count: number;
   confirmed_speaker_count: number;
   unconfirmed_speaker_count: number;
+  low_confidence_count: number;
+  short_segment_count: number;
+  no_match_count: number;
+  error_count: number;
   summary_text: string;
 }
 
@@ -76,6 +81,29 @@ function clampPositiveInt(value: number | undefined, fallback: number, max: numb
   if (!Number.isFinite(value)) return fallback;
   return Math.max(1, Math.min(max, Math.floor(value as number)));
 }
+
+const SEGMENT_DURATION_EXPR = `(COALESCE(cs.end_ms, 0) - COALESCE(cs.start_ms, 0))`;
+const LOW_CONFIDENCE_EXPR = `COALESCE(cs.resolution_method, '') IN ('xfyun_low_confidence', 'xfyun_conflict')`;
+const SHORT_SEGMENT_EXPR = `(
+  cs.speaker_id IS NULL
+  AND COALESCE(cs.resolution_method, '') != 'human_segment_excluded'
+  AND COALESCE(cs.resolution_method, '') != 'xfyun_error'
+  AND NOT (${LOW_CONFIDENCE_EXPR})
+  AND (
+    COALESCE(cs.resolution_method, '') = 'xfyun_skipped_short'
+    OR (${SEGMENT_DURATION_EXPR} >= 0 AND ${SEGMENT_DURATION_EXPR} < 1200)
+  )
+)`;
+const NO_MATCH_EXPR = `(
+  cs.speaker_id IS NULL
+  AND COALESCE(cs.resolution_method, '') != 'human_segment_excluded'
+  AND COALESCE(cs.resolution_method, '') != 'xfyun_error'
+  AND NOT (${LOW_CONFIDENCE_EXPR})
+  AND NOT (
+    COALESCE(cs.resolution_method, '') = 'xfyun_skipped_short'
+    OR (${SEGMENT_DURATION_EXPR} >= 0 AND ${SEGMENT_DURATION_EXPR} < 1200)
+  )
+)`;
 
 function buildConversationFilters(filters: ConversationListFilters): { whereClause: string; params: unknown[] } {
   const where: string[] = [];
@@ -136,6 +164,22 @@ function buildConversationFilters(filters: ConversationListFilters): { whereClau
   if (filters.status) {
     where.push(`c.status = ?`);
     params.push(filters.status);
+  }
+
+  if (filters.hasSegments === 'true') {
+    where.push(`EXISTS (
+      SELECT 1
+      FROM conversation_segments cs2
+      WHERE cs2.conversation_id = c.id
+    )`);
+  }
+
+  if (filters.hasSegments === 'false') {
+    where.push(`NOT EXISTS (
+      SELECT 1
+      FROM conversation_segments cs2
+      WHERE cs2.conversation_id = c.id
+    )`);
   }
 
   if (filters.hasUnconfirmedSpeakers === 'true') {
@@ -216,6 +260,10 @@ export function listConversations(filters: ConversationListFilters): PaginatedRe
         THEN COALESCE(cs.speaker_label, 'unknown')
         ELSE NULL
       END) AS unconfirmed_speaker_count,
+      SUM(CASE WHEN ${LOW_CONFIDENCE_EXPR} THEN 1 ELSE 0 END) AS low_confidence_count,
+      SUM(CASE WHEN ${SHORT_SEGMENT_EXPR} THEN 1 ELSE 0 END) AS short_segment_count,
+      SUM(CASE WHEN ${NO_MATCH_EXPR} THEN 1 ELSE 0 END) AS no_match_count,
+      SUM(CASE WHEN cs.resolution_method = 'xfyun_error' THEN 1 ELSE 0 END) AS error_count,
       COALESCE(GROUP_CONCAT(CASE WHEN cs.text IS NOT NULL AND TRIM(cs.text) != '' THEN cs.text END, ' '), '') AS summary_text
     FROM conversations c
     LEFT JOIN conversation_segments cs ON cs.conversation_id = c.id
@@ -261,6 +309,10 @@ export function getConversationDetail(conversationId: string): ConversationDetai
         THEN COALESCE(cs.speaker_label, 'unknown')
         ELSE NULL
       END) AS unconfirmed_speaker_count,
+      SUM(CASE WHEN ${LOW_CONFIDENCE_EXPR} THEN 1 ELSE 0 END) AS low_confidence_count,
+      SUM(CASE WHEN ${SHORT_SEGMENT_EXPR} THEN 1 ELSE 0 END) AS short_segment_count,
+      SUM(CASE WHEN ${NO_MATCH_EXPR} THEN 1 ELSE 0 END) AS no_match_count,
+      SUM(CASE WHEN cs.resolution_method = 'xfyun_error' THEN 1 ELSE 0 END) AS error_count,
       COALESCE(GROUP_CONCAT(CASE WHEN cs.text IS NOT NULL AND TRIM(cs.text) != '' THEN cs.text END, ' '), '') AS summary_text
     FROM conversations c
     LEFT JOIN conversation_segments cs ON cs.conversation_id = c.id

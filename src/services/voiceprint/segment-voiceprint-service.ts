@@ -100,6 +100,7 @@ export interface VoiceprintEnrollmentRequest {
   speakerId?: string | null;
   speakerName?: string | null;
   identityLabel?: string | null;
+  notes?: string | null;
   excludedSegmentIds?: string[];
 }
 
@@ -527,6 +528,42 @@ function buildPendingGroups(items: SegmentVoiceprintPendingItem[]): SegmentVoice
   ));
 }
 
+function normalizeDecisionForCurrentScheme(input: {
+  decision?: string | null;
+  resolutionMethod?: string | null;
+  speakerId?: string | null;
+  startMs?: number | null;
+  endMs?: number | null;
+}): string {
+  const raw = String(input.decision || input.resolutionMethod || '').trim();
+  const durationMs = Math.max(0, Number(input.endMs || 0) - Number(input.startMs || 0));
+
+  if (raw === HUMAN_EXCLUDED_METHOD) {
+    return HUMAN_EXCLUDED_METHOD;
+  }
+  if (raw === HUMAN_CONFIRMED_METHOD || raw === 'manual_confirm' || raw === 'manual_identity_confirm') {
+    return HUMAN_CONFIRMED_METHOD;
+  }
+  if (
+    raw === AUTO_HIT_METHOD
+    || raw === BACKFILL_HIT_METHOD
+    || raw === LOW_CONFIDENCE_METHOD
+    || raw === CONFLICT_METHOD
+    || raw === NO_MATCH_METHOD
+    || raw === SKIPPED_SHORT_METHOD
+    || raw === ERROR_METHOD
+  ) {
+    return raw;
+  }
+  if (input.speakerId) {
+    return HUMAN_CONFIRMED_METHOD;
+  }
+  if (durationMs > 0 && durationMs < 1200) {
+    return SKIPPED_SHORT_METHOD;
+  }
+  return NO_MATCH_METHOD;
+}
+
 export async function listVoiceprintFeatureList(): Promise<Array<{ featureId: string; featureInfo?: string }>> {
   const config = getConfigOrThrow();
   return queryFeatureList(config);
@@ -618,7 +655,13 @@ export function getPendingSegments(conversationId: string): SegmentVoiceprintPen
       audioUrl: match?.request_audio_path ? match.request_audio_path : null,
       speakerLabel: row.speaker_label,
       sourceSpeakerLabel: row.original_speaker_label || row.speaker_label,
-      decision: match?.decision || row.resolution_method || 'pending',
+      decision: normalizeDecisionForCurrentScheme({
+        decision: match?.decision || null,
+        resolutionMethod: row.resolution_method,
+        speakerId: row.speaker_id,
+        startMs: row.start_ms,
+        endMs: row.end_ms,
+      }),
       topScore: match?.top_score ?? null,
       secondScore: match?.second_score ?? null,
       resolutionMethod: row.resolution_method,
@@ -854,6 +897,7 @@ async function createOrUpdateSpeakerForEnrollment(input: {
   speakerId?: string | null;
   speakerName?: string | null;
   identityLabel?: string | null;
+  notes?: string | null;
   enrollmentBatchId: string;
 }): Promise<{ speakerId: string; createdNewSpeaker: boolean; speaker: SpeakerRow; action: 'create_feature' | 'update_feature'; featureRow?: FeatureRow }> {
   const config = getConfigOrThrow();
@@ -873,6 +917,7 @@ async function createOrUpdateSpeakerForEnrollment(input: {
   }
 
   const speakerName = (input.speakerName || '').trim();
+  const notes = (input.notes || '').trim() || null;
   if (!speakerName) {
     throw new Error('speakerName is required for speakerMode=new');
   }
@@ -895,7 +940,7 @@ async function createOrUpdateSpeakerForEnrollment(input: {
     speakerName,
     input.identityLabel?.trim() || null,
     input.identityLabel?.trim() ? 'confirmed' : 'unconfirmed',
-    null,
+    notes,
     now,
     now,
     null,
@@ -952,6 +997,7 @@ export async function enrollFromSegments(input: VoiceprintEnrollmentRequest): Pr
       speakerId: input.speakerId,
       speakerName: input.speakerName,
       identityLabel: input.identityLabel,
+      notes: input.notes,
       enrollmentBatchId: batchId,
     });
 

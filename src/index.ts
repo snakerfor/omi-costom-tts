@@ -414,6 +414,7 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, urlOb
       speakerId?: string | null;
       speakerName?: string | null;
       identityLabel?: string | null;
+      notes?: string | null;
       excludedSegmentIds?: string[];
     }>(req);
     try {
@@ -432,6 +433,7 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, urlOb
         speakerId: body.speakerId || null,
         speakerName: body.speakerName || null,
         identityLabel: body.identityLabel || null,
+        notes: body.notes || null,
         excludedSegmentIds: Array.isArray(body.excludedSegmentIds) ? body.excludedSegmentIds : [],
       });
       sendJson(res, 200, { ok: true, data: result });
@@ -524,6 +526,7 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, urlOb
       startTime: urlObj.searchParams.get('start_time') || undefined,
       endTime: urlObj.searchParams.get('end_time') || undefined,
       status: urlObj.searchParams.get('status') || undefined,
+      hasSegments: (urlObj.searchParams.get('has_segments') as any) || 'true',
       hasUnconfirmedSpeakers: (urlObj.searchParams.get('has_unconfirmed_speakers') as any) || 'all',
       page: parseNumber(urlObj.searchParams.get('page'), 1),
       pageSize: parseNumber(urlObj.searchParams.get('page_size'), 50),
