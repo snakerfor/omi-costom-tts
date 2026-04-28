@@ -111,6 +111,8 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     bitsPerSample: 16,
   });
   const recorderReady = recorder.init();
+  let timelineWriteTimer: NodeJS.Timeout | null = null;
+  let timelineWriteInFlight = Promise.resolve();
 
   void recorderReady.catch(err => {
     console.error('[Recorder] init failed:', err);
@@ -165,19 +167,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     await ensureWavFinalized('[AudioFile] Saved WAV:');
     await finalSegmentQueue.catch(() => undefined);
     try {
-      await fs.writeFile(
-        `${recorder.filePath}.timeline.json`,
-        JSON.stringify(
-          {
-            session_id: sessionId,
-            generated_at: new Date().toISOString(),
-            entries: sentToOriginalTimeline,
-          },
-          null,
-          2,
-        ),
-        'utf8',
-      );
+      await flushTimelineMapWrite();
     } catch (err) {
       console.warn('[Recorder] timeline map write failed:', String((err as Error)?.message ?? err));
     }
@@ -360,6 +350,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     ) {
       prev.original_end_ms = originalEndMs;
       prev.sent_end_ms = sentEndMs;
+      scheduleTimelineMapWrite();
       return;
     }
 
@@ -369,6 +360,45 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       original_start_ms: originalStartMs,
       original_end_ms: originalEndMs,
     });
+    scheduleTimelineMapWrite();
+  }
+
+  async function writeTimelineMapSnapshot(): Promise<void> {
+    await recorderReady;
+    await fs.writeFile(
+      `${recorder.filePath}.timeline.json`,
+      JSON.stringify(
+        {
+          session_id: sessionId,
+          generated_at: new Date().toISOString(),
+          entries: sentToOriginalTimeline,
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+  }
+
+  function scheduleTimelineMapWrite(): void {
+    if (timelineWriteTimer) return;
+    timelineWriteTimer = setTimeout(() => {
+      timelineWriteTimer = null;
+      timelineWriteInFlight = timelineWriteInFlight
+        .then(() => writeTimelineMapSnapshot())
+        .catch(err => {
+          console.warn('[Recorder] timeline map write failed:', String((err as Error)?.message ?? err));
+        });
+    }, 1000);
+  }
+
+  async function flushTimelineMapWrite(): Promise<void> {
+    if (timelineWriteTimer) {
+      clearTimeout(timelineWriteTimer);
+      timelineWriteTimer = null;
+    }
+    await timelineWriteInFlight.catch(() => undefined);
+    await writeTimelineMapSnapshot();
   }
 
   function finalizeByTimeout(reason: string): void {
