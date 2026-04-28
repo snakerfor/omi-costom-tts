@@ -341,11 +341,12 @@
     const endSec = Math.max(startSec, (Number(item.end_ms || 0) + conversationPlaybackStartOffsetMs + conversationPlaybackEndPaddingMs) / 1000);
     const startPlayback = () => {
       audio.currentTime = startSec;
-      void audio.play().catch(showError);
-      speakerPreviewStopTimer = window.setTimeout(() => {
-        audio.pause();
-        audio.currentTime = endSec;
-      }, Math.max(200, Math.round((endSec - startSec) * 1000) + 120));
+      playMediaElement(audio, () => {
+        speakerPreviewStopTimer = window.setTimeout(() => {
+          audio.pause();
+          audio.currentTime = endSec;
+        }, Math.max(200, Math.round((endSec - startSec) * 1000) + 120));
+      });
     };
     audio.addEventListener('loadedmetadata', startPlayback, { once: true });
     audio.load();
@@ -841,6 +842,28 @@
     }
   }
 
+  function isExpectedPlaybackInterruption(err) {
+    const name = String(err?.name || '');
+    const message = String(err?.message || err || '');
+    return name === 'AbortError' || /interrupted by a call to pause|interrupted by a new load request/i.test(message);
+  }
+
+  function playMediaElement(media, onStarted) {
+    const playResult = media.play();
+    const scheduleStarted = () => {
+      if (typeof onStarted === 'function') onStarted();
+    };
+    if (!playResult || typeof playResult.then !== 'function') {
+      scheduleStarted();
+      return;
+    }
+    playResult.then(scheduleStarted).catch((err) => {
+      if (!isExpectedPlaybackInterruption(err)) {
+        showError(err);
+      }
+    });
+  }
+
   function conversationParticipantKey(segment) {
     if (segment?.speaker_id) return `speaker:${segment.speaker_id}`;
     const label = segment?.original_speaker_label || segment?.speaker_label || segment?.voiceprint_top_speaker_id || 'unknown';
@@ -927,13 +950,14 @@
       (rawEndMs + conversationPlaybackStartOffsetMs + conversationPlaybackEndPaddingMs) / 1000,
     );
     const startPlayback = () => {
-      player.currentTime = startSec;
-      void player.play().catch(showError);
       clearConversationPlaybackTimer();
-      conversationPlaybackStopTimer = window.setTimeout(() => {
-        player.pause();
-        player.currentTime = endSec;
-      }, Math.max(200, Math.round((endSec - startSec) * 1000) + 120));
+      player.currentTime = startSec;
+      playMediaElement(player, () => {
+        conversationPlaybackStopTimer = window.setTimeout(() => {
+          player.pause();
+          player.currentTime = endSec;
+        }, Math.max(200, Math.round((endSec - startSec) * 1000) + 120));
+      });
     };
 
     if (player.readyState >= 1) {
