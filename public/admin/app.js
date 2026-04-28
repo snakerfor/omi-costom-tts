@@ -26,7 +26,7 @@
   let conversationPlaybackStopTimer = null;
   let speakerPreviewAudio = null;
   let speakerPreviewStopTimer = null;
-  const conversationPlaybackStartOffsetMs = 180;
+  const conversationPlaybackStartOffsetMs = 0;
   const conversationPlaybackEndPaddingMs = 120;
 
   function qs(selector) {
