@@ -8,7 +8,7 @@ export interface ConversationListFilters {
   startTime?: string;
   endTime?: string;
   status?: string;
-  hasSegments?: 'all' | 'true' | 'false';
+  hasSegments?: 'all' | 'true' | 'false' | 'with_failed';
   hasUnconfirmedSpeakers?: 'all' | 'true' | 'false';
   page?: number;
   pageSize?: number;
@@ -171,6 +171,17 @@ function buildConversationFilters(filters: ConversationListFilters): { whereClau
       SELECT 1
       FROM conversation_segments cs2
       WHERE cs2.conversation_id = c.id
+    )`);
+  }
+
+  if (filters.hasSegments === 'with_failed') {
+    where.push(`(
+      c.status = 'failed'
+      OR EXISTS (
+        SELECT 1
+        FROM conversation_segments cs2
+        WHERE cs2.conversation_id = c.id
+      )
     )`);
   }
 

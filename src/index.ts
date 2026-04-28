@@ -737,7 +737,7 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, urlOb
       startTime: urlObj.searchParams.get('start_time') || undefined,
       endTime: urlObj.searchParams.get('end_time') || undefined,
       status: urlObj.searchParams.get('status') || undefined,
-      hasSegments: (urlObj.searchParams.get('has_segments') as any) || 'true',
+      hasSegments: (urlObj.searchParams.get('has_segments') as any) || 'with_failed',
       hasUnconfirmedSpeakers: (urlObj.searchParams.get('has_unconfirmed_speakers') as any) || 'all',
       page: parseNumber(urlObj.searchParams.get('page'), 1),
       pageSize: parseNumber(urlObj.searchParams.get('page_size'), 50),

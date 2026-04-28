@@ -1185,6 +1185,7 @@
     const speakerName = qs('#conv-speaker-filter').value;
     const keyword = qs('#conv-keyword').value.trim();
     const status = qs('#conv-status').value;
+    const hasSegments = qs('#conv-has-segments').value;
     const start = qs('#conv-start').value;
     const end = qs('#conv-end').value;
     const pageSize = Number(qs('#conv-page-size').value || '20');
@@ -1193,6 +1194,7 @@
     if (speakerName) params.set('speaker_name', speakerName);
     if (keyword) params.set('keyword', keyword);
     if (status) params.set('status', status);
+    if (hasSegments) params.set('has_segments', hasSegments);
     if (start) params.set('start_time', new Date(start).toISOString());
     if (end) params.set('end_time', new Date(end).toISOString());
     params.set('page', String(state.conversationPagination.page));
@@ -1476,6 +1478,7 @@
     qs('#conv-speaker-filter').addEventListener('change', () => loadConversations(true).catch(showError));
     qs('#conv-identity-label').addEventListener('change', () => loadConversations(true).catch(showError));
     qs('#conv-status').addEventListener('change', () => loadConversations(true).catch(showError));
+    qs('#conv-has-segments').addEventListener('change', () => loadConversations(true).catch(showError));
     qs('#conv-page-size').addEventListener('change', () => loadConversations(true).catch(showError));
     qs('#conv-prev-page').addEventListener('click', () => {
       if (state.conversationPagination.page <= 1) return;
