@@ -63,10 +63,14 @@ import {
   searchVoiceprintMaterialCandidates,
   syncSpeakerVoiceprintMaterials,
 } from './services/voiceprint/material-service';
+import { recoverDanglingRecordingConversations } from './services/startup-conversation-recovery';
 
 const PORT = parseInt(process.env.PORT ?? '28089', 10);
 
 initDb();
+void recoverDanglingRecordingConversations().catch(err => {
+  console.error('[StartupRecovery] failed:', err);
+});
 
 if (!(globalThis as any).WebSocket) {
   (globalThis as any).WebSocket = WS;
