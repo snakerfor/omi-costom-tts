@@ -707,28 +707,26 @@
     qs('#speaker-formal-title').textContent = `正式语料 ${summary.formalItems.length}`;
     qs('#speaker-candidate-title').textContent = `候选语料 ${summary.candidateItems.length}`;
 
-    const renderItem = (item, mode) => `
-      <article class="segment-item speaker-material-item">
-        <div class="segment-title">
-          <div class="speaker-material-title">
-            <strong>${escapeHtml(materialSegmentLabel(item))}</strong>
-            <span class="subtle">${escapeHtml(formatDate(item.started_at))} · ${escapeHtml(materialTimeLabel(item))}</span>
-          </div>
-          <span class="badge ${segmentStatusMeta(item).className || 'neutral'}">${escapeHtml(segmentStatusMeta(item).label)}</span>
-        </div>
-        <p>${escapeHtml(item.text || '暂无转录文本')}</p>
-        <div class="speaker-material-footer">
-          <span class="subtle">${mode === 'formal'
-            ? `${Math.max(0, Number(item.text?.length || 0))} 字 · ${formatSegmentSeconds(Math.max(0, Number(item.end_ms || 0) - Number(item.start_ms || 0)))}`
-            : `${Math.max(0, Number(item.text?.length || 0))} 字 · ${formatSegmentSeconds(Math.max(0, Number(item.end_ms || 0) - Number(item.start_ms || 0)))} · 候选命中 ${formatScore(item.voiceprint_top_score)}`}</span>
-          <div class="speaker-material-actions">
-            ${mode === 'formal'
-              ? `<button type="button" class="inline-action secondary-button" data-speaker-material-play="${escapeHtml(item.id)}">试听</button><button type="button" class="inline-action secondary-button" data-speaker-material-demote="${escapeHtml(item.id)}">移回候选</button><button type="button" class="inline-action secondary-button" data-speaker-material-remove="${escapeHtml(item.id)}">移除</button>`
-              : `<button type="button" class="inline-action secondary-button" data-speaker-material-play="${escapeHtml(item.id)}">试听</button><button type="button" data-speaker-material-promote="${escapeHtml(item.id)}">转正式</button><button type="button" class="inline-action secondary-button" data-speaker-material-remove="${escapeHtml(item.id)}">移除</button>`}
-          </div>
+    const renderItem = (item, mode) => {
+      const durationText = formatSegmentSeconds(Math.max(0, Number(item.end_ms || 0) - Number(item.start_ms || 0)));
+      const metaText = mode === 'formal'
+        ? `${durationText} · ${Math.max(0, Number(item.text?.length || 0))} 字`
+        : `${durationText} · 命中 ${formatScore(item.voiceprint_top_score)}`;
+      return `
+      <article class="segment-item speaker-material-item compact-material-item">
+        <span class="speaker-material-speaker" title="${escapeHtml(materialSegmentLabel(item))}">${escapeHtml(materialSegmentLabel(item))}</span>
+        <span class="speaker-material-time" title="${escapeHtml(`${formatDate(item.started_at)} · ${materialTimeLabel(item)}`)}">${escapeHtml(formatDate(item.started_at))} · ${escapeHtml(materialTimeLabel(item))}</span>
+        <span class="speaker-material-text" title="${escapeHtml(item.text || '暂无转录文本')}">${escapeHtml(item.text || '暂无转录文本')}</span>
+        <span class="speaker-material-meta">${escapeHtml(metaText)}</span>
+        <span class="badge ${segmentStatusMeta(item).className || 'neutral'}">${escapeHtml(segmentStatusMeta(item).label)}</span>
+        <div class="speaker-material-actions">
+          ${mode === 'formal'
+            ? `<button type="button" class="inline-action secondary-button" data-speaker-material-play="${escapeHtml(item.id)}">试听</button><button type="button" class="inline-action secondary-button" data-speaker-material-demote="${escapeHtml(item.id)}">候选</button><button type="button" class="inline-action secondary-button" data-speaker-material-remove="${escapeHtml(item.id)}">移除</button>`
+            : `<button type="button" class="inline-action secondary-button" data-speaker-material-play="${escapeHtml(item.id)}">试听</button><button type="button" data-speaker-material-promote="${escapeHtml(item.id)}">正式</button><button type="button" class="inline-action secondary-button" data-speaker-material-remove="${escapeHtml(item.id)}">移除</button>`}
         </div>
       </article>
     `;
+    };
 
     qs('#speaker-formal-materials').innerHTML = summary.formalItems.length
       ? summary.formalItems.map((item) => renderItem(item, 'formal')).join('')
