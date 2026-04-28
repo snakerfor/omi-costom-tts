@@ -84,8 +84,17 @@ function clampPositiveInt(value: number | undefined, fallback: number, max: numb
 
 const SEGMENT_DURATION_EXPR = `(COALESCE(cs.end_ms, 0) - COALESCE(cs.start_ms, 0))`;
 const LOW_CONFIDENCE_EXPR = `COALESCE(cs.resolution_method, '') IN ('xfyun_low_confidence', 'xfyun_conflict')`;
+const HAS_RESOLVED_SPEAKER_EXPR = `(cs.speaker_id IS NOT NULL OR COALESCE(cs.speaker_name, '') != '')`;
+const PARTICIPANT_KEY_EXPR = `(
+  CASE
+    WHEN cs.speaker_id IS NOT NULL THEN 'speaker:' || cs.speaker_id
+    ELSE 'label:' || COALESCE(cs.speaker_label, 'unknown')
+  END
+)`;
 const SHORT_SEGMENT_EXPR = `(
-  cs.speaker_id IS NULL
+  cs.id IS NOT NULL
+  AND
+  NOT (${HAS_RESOLVED_SPEAKER_EXPR})
   AND COALESCE(cs.resolution_method, '') != 'human_segment_excluded'
   AND COALESCE(cs.resolution_method, '') != 'xfyun_error'
   AND NOT (${LOW_CONFIDENCE_EXPR})
@@ -95,7 +104,9 @@ const SHORT_SEGMENT_EXPR = `(
   )
 )`;
 const NO_MATCH_EXPR = `(
-  cs.speaker_id IS NULL
+  cs.id IS NOT NULL
+  AND
+  NOT (${HAS_RESOLVED_SPEAKER_EXPR})
   AND COALESCE(cs.resolution_method, '') != 'human_segment_excluded'
   AND COALESCE(cs.resolution_method, '') != 'xfyun_error'
   AND NOT (${LOW_CONFIDENCE_EXPR})
@@ -260,15 +271,15 @@ export function listConversations(filters: ConversationListFilters): PaginatedRe
       c.created_at,
       c.updated_at,
       COUNT(cs.id) AS segment_count,
-      COUNT(DISTINCT COALESCE(cs.speaker_label, 'unknown')) AS speaker_count,
+      COUNT(DISTINCT CASE WHEN cs.id IS NOT NULL THEN ${PARTICIPANT_KEY_EXPR} ELSE NULL END) AS speaker_count,
       COUNT(DISTINCT CASE
-        WHEN s.name IS NOT NULL AND TRIM(s.name) != '' AND s.identity_label IS NOT NULL AND TRIM(s.identity_label) != ''
-        THEN COALESCE(cs.speaker_label, 'unknown')
+        WHEN cs.id IS NOT NULL AND ${HAS_RESOLVED_SPEAKER_EXPR}
+        THEN ${PARTICIPANT_KEY_EXPR}
         ELSE NULL
       END) AS confirmed_speaker_count,
       COUNT(DISTINCT CASE
-        WHEN s.id IS NULL OR s.name IS NULL OR TRIM(s.name) = '' OR s.identity_label IS NULL OR TRIM(s.identity_label) = ''
-        THEN COALESCE(cs.speaker_label, 'unknown')
+        WHEN cs.id IS NOT NULL AND NOT (${HAS_RESOLVED_SPEAKER_EXPR})
+        THEN ${PARTICIPANT_KEY_EXPR}
         ELSE NULL
       END) AS unconfirmed_speaker_count,
       SUM(CASE WHEN ${LOW_CONFIDENCE_EXPR} THEN 1 ELSE 0 END) AS low_confidence_count,
@@ -309,15 +320,15 @@ export function getConversationDetail(conversationId: string): ConversationDetai
       c.created_at,
       c.updated_at,
       COUNT(cs.id) AS segment_count,
-      COUNT(DISTINCT COALESCE(cs.speaker_label, 'unknown')) AS speaker_count,
+      COUNT(DISTINCT CASE WHEN cs.id IS NOT NULL THEN ${PARTICIPANT_KEY_EXPR} ELSE NULL END) AS speaker_count,
       COUNT(DISTINCT CASE
-        WHEN s.name IS NOT NULL AND TRIM(s.name) != '' AND s.identity_label IS NOT NULL AND TRIM(s.identity_label) != ''
-        THEN COALESCE(cs.speaker_label, 'unknown')
+        WHEN cs.id IS NOT NULL AND ${HAS_RESOLVED_SPEAKER_EXPR}
+        THEN ${PARTICIPANT_KEY_EXPR}
         ELSE NULL
       END) AS confirmed_speaker_count,
       COUNT(DISTINCT CASE
-        WHEN s.id IS NULL OR s.name IS NULL OR TRIM(s.name) = '' OR s.identity_label IS NULL OR TRIM(s.identity_label) = ''
-        THEN COALESCE(cs.speaker_label, 'unknown')
+        WHEN cs.id IS NOT NULL AND NOT (${HAS_RESOLVED_SPEAKER_EXPR})
+        THEN ${PARTICIPANT_KEY_EXPR}
         ELSE NULL
       END) AS unconfirmed_speaker_count,
       SUM(CASE WHEN ${LOW_CONFIDENCE_EXPR} THEN 1 ELSE 0 END) AS low_confidence_count,
@@ -340,30 +351,28 @@ export function getConversationDetail(conversationId: string): ConversationDetai
 
   const speakers = db.prepare(`
     SELECT
-      cs.speaker_label,
-      MIN(cs.speaker_id) AS speaker_id,
-      MAX(s.name) AS speaker_name,
+      CASE WHEN cs.speaker_id IS NULL THEN cs.speaker_label ELSE NULL END AS speaker_label,
+      cs.speaker_id,
+      COALESCE(MAX(s.name), MAX(cs.speaker_name)) AS speaker_name,
       COALESCE(
-        MAX(s.name),
-        MAX(s.display_label),
-        MAX(cs.speaker_name),
-        cs.speaker_label,
+        CASE WHEN cs.speaker_id IS NOT NULL THEN MAX(s.name) END,
+        CASE WHEN cs.speaker_id IS NOT NULL THEN MAX(s.display_label) END,
+        CASE WHEN cs.speaker_id IS NOT NULL THEN MAX(cs.speaker_name) END,
+        CASE WHEN cs.speaker_id IS NULL THEN cs.speaker_label END,
+        CASE WHEN cs.speaker_id IS NULL THEN '未知发言人' END,
         '未知发言人'
       ) AS display_name,
       COALESCE(MAX(s.identity_label), MAX(cs.speaker_identity)) AS identity_label,
       COUNT(cs.id) AS segment_count,
       SUM(COALESCE(cs.end_ms, 0) - COALESCE(cs.start_ms, 0)) AS total_duration_ms,
       CASE
-        WHEN MAX(CASE
-          WHEN s.name IS NOT NULL AND TRIM(s.name) != '' AND s.identity_label IS NOT NULL AND TRIM(s.identity_label) != '' THEN 1
-          ELSE 0
-        END) = 1 THEN 1
+        WHEN ${HAS_RESOLVED_SPEAKER_EXPR} THEN 1
         ELSE 0
       END AS is_confirmed
     FROM conversation_segments cs
     LEFT JOIN speakers s ON s.id = cs.speaker_id
     WHERE cs.conversation_id = ?
-    GROUP BY cs.speaker_label
+    GROUP BY ${PARTICIPANT_KEY_EXPR}
     ORDER BY total_duration_ms DESC, segment_count DESC
   `).all(conversationId) as ConversationSpeakerSummary[];
 
