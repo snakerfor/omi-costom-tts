@@ -238,8 +238,12 @@
                       <h3>声纹语料管理</h3>
                       <p class="subtle">这里管理该发言人的正式语料和候选语料。调整完成后，再统一保存更新讯飞。</p>
                     </div>
-                    <button id="speaker-material-save" type="button">保存并更新讯飞</button>
+                    <div class="speaker-detail-actions">
+                      <button id="speaker-material-preview" type="button" class="secondary-button">生成试听</button>
+                      <button id="speaker-material-save" type="button">保存并更新讯飞</button>
+                    </div>
                   </div>
+                  <div id="speaker-material-preview-player" class="speaker-material-preview hidden"></div>
                   <div class="speaker-material-stack">
                     <section class="speaker-material-panel speaker-material-panel-formal">
                       <div class="speaker-material-column-header">

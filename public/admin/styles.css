@@ -841,6 +841,19 @@ main {
   gap: 12px;
 }
 
+.speaker-material-preview {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+}
+
+.speaker-material-preview audio {
+  width: 100%;
+}
+
 .speaker-material-panel {
   display: grid;
   gap: 10px;

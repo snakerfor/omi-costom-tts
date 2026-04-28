@@ -54,6 +54,15 @@ import {
   getPendingSegments,
   scanConversationVoiceprintSegments,
 } from './services/voiceprint/segment-voiceprint-service';
+import {
+  addSpeakerVoiceprintMaterials,
+  createVoiceprintSpeakerWithMaterials,
+  getSpeakerVoiceprintMaterials,
+  previewSpeakerVoiceprintMaterials,
+  removeSpeakerVoiceprintMaterial,
+  searchVoiceprintMaterialCandidates,
+  syncSpeakerVoiceprintMaterials,
+} from './services/voiceprint/material-service';
 
 const PORT = parseInt(process.env.PORT ?? '28089', 10);
 
@@ -198,6 +207,20 @@ function enrichConversation(row: any): any {
     ...row,
     audio_file_url: toMediaUrl(row.audio_file_path),
     raw_result_url: toMediaUrl(row.raw_result_path),
+  };
+}
+
+function enrichMaterialSegment(row: any): any {
+  return {
+    ...row,
+    audio_file_url: toMediaUrl(row.audio_file_path),
+  };
+}
+
+function enrichEnrollmentBatch(row: any): any {
+  return {
+    ...row,
+    audio_url: toMediaUrl(row.audio_path),
   };
 }
 
@@ -457,6 +480,166 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, urlOb
         excludedSegmentIds: Array.isArray(body.excludedSegmentIds) ? body.excludedSegmentIds : [],
       });
       sendJson(res, 200, { ok: true, data: result });
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: String((err as Error)?.message ?? err) });
+    }
+    return true;
+  }
+
+  if (req.method === 'GET' && urlObj.pathname === '/api/admin/voiceprint/material-candidates') {
+    try {
+      const result = searchVoiceprintMaterialCandidates({
+        q: urlObj.searchParams.get('q') || undefined,
+        speakerId: urlObj.searchParams.get('speakerId') || undefined,
+        startTime: urlObj.searchParams.get('startTime') || undefined,
+        endTime: urlObj.searchParams.get('endTime') || undefined,
+        page: parseNumber(urlObj.searchParams.get('page'), 1),
+        pageSize: parseNumber(urlObj.searchParams.get('pageSize'), 30),
+      });
+      sendJson(res, 200, {
+        ok: true,
+        data: result.data.map(enrichMaterialSegment),
+        pagination: {
+          page: result.page,
+          pageSize: result.pageSize,
+          total: result.total,
+          totalPages: result.totalPages,
+        },
+      });
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: String((err as Error)?.message ?? err) });
+    }
+    return true;
+  }
+
+  if (req.method === 'POST' && urlObj.pathname === '/api/admin/voiceprint/speakers') {
+    const body = await readJsonBody<{
+      speakerName?: string | null;
+      identityLabel?: string | null;
+      notes?: string | null;
+      segmentIds?: string[];
+      materialStatus?: string;
+    }>(req);
+    try {
+      const result = createVoiceprintSpeakerWithMaterials(body);
+      sendJson(res, 200, {
+        ok: true,
+        data: {
+          speaker: enrichSpeaker(result.speaker),
+          activeFeature: result.activeFeature,
+          enrollmentBatches: result.enrollmentBatches.map(enrichEnrollmentBatch),
+          formalMaterials: result.formalMaterials.map(enrichMaterialSegment),
+          candidateMaterials: result.candidateMaterials.map(enrichMaterialSegment),
+        },
+      });
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: String((err as Error)?.message ?? err) });
+    }
+    return true;
+  }
+
+  if (req.method === 'GET' && /^\/api\/admin\/speakers\/[^/]+\/voiceprint\/materials$/.test(urlObj.pathname)) {
+    const speakerId = decodeURIComponent(urlObj.pathname.split('/')[4] || '');
+    try {
+      const result = getSpeakerVoiceprintMaterials(speakerId);
+      sendJson(res, 200, {
+        ok: true,
+        data: {
+          speaker: enrichSpeaker(result.speaker),
+          activeFeature: result.activeFeature,
+          enrollmentBatches: result.enrollmentBatches.map(enrichEnrollmentBatch),
+          formalMaterials: result.formalMaterials.map(enrichMaterialSegment),
+          candidateMaterials: result.candidateMaterials.map(enrichMaterialSegment),
+        },
+      });
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: String((err as Error)?.message ?? err) });
+    }
+    return true;
+  }
+
+  if (req.method === 'POST' && /^\/api\/admin\/speakers\/[^/]+\/voiceprint\/materials$/.test(urlObj.pathname)) {
+    const speakerId = decodeURIComponent(urlObj.pathname.split('/')[4] || '');
+    const body = await readJsonBody<{
+      segmentIds?: string[];
+      materialStatus?: string;
+      source?: string | null;
+      note?: string | null;
+    }>(req);
+    try {
+      const result = addSpeakerVoiceprintMaterials({
+        speakerId,
+        segmentIds: Array.isArray(body.segmentIds) ? body.segmentIds : [],
+        materialStatus: body.materialStatus || 'candidate',
+        source: body.source || null,
+        note: body.note || null,
+      });
+      sendJson(res, 200, {
+        ok: true,
+        data: {
+          speaker: enrichSpeaker(result.speaker),
+          activeFeature: result.activeFeature,
+          enrollmentBatches: result.enrollmentBatches.map(enrichEnrollmentBatch),
+          formalMaterials: result.formalMaterials.map(enrichMaterialSegment),
+          candidateMaterials: result.candidateMaterials.map(enrichMaterialSegment),
+        },
+      });
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: String((err as Error)?.message ?? err) });
+    }
+    return true;
+  }
+
+  if (req.method === 'DELETE' && /^\/api\/admin\/speakers\/[^/]+\/voiceprint\/materials\/[^/]+$/.test(urlObj.pathname)) {
+    const parts = urlObj.pathname.split('/');
+    const speakerId = decodeURIComponent(parts[4] || '');
+    const segmentId = decodeURIComponent(parts[7] || '');
+    try {
+      const result = removeSpeakerVoiceprintMaterial(speakerId, segmentId);
+      sendJson(res, 200, {
+        ok: true,
+        data: {
+          speaker: enrichSpeaker(result.speaker),
+          activeFeature: result.activeFeature,
+          enrollmentBatches: result.enrollmentBatches.map(enrichEnrollmentBatch),
+          formalMaterials: result.formalMaterials.map(enrichMaterialSegment),
+          candidateMaterials: result.candidateMaterials.map(enrichMaterialSegment),
+        },
+      });
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: String((err as Error)?.message ?? err) });
+    }
+    return true;
+  }
+
+  if (req.method === 'POST' && /^\/api\/admin\/speakers\/[^/]+\/voiceprint\/xfyun\/preview$/.test(urlObj.pathname)) {
+    const speakerId = decodeURIComponent(urlObj.pathname.split('/')[4] || '');
+    try {
+      const result = await previewSpeakerVoiceprintMaterials(speakerId);
+      sendJson(res, 200, {
+        ok: true,
+        data: {
+          ...result,
+          audioUrl: toMediaUrl(result.audioPath),
+        },
+      });
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: String((err as Error)?.message ?? err) });
+    }
+    return true;
+  }
+
+  if (req.method === 'POST' && /^\/api\/admin\/speakers\/[^/]+\/voiceprint\/xfyun\/sync$/.test(urlObj.pathname)) {
+    const speakerId = decodeURIComponent(urlObj.pathname.split('/')[4] || '');
+    try {
+      const result = await syncSpeakerVoiceprintMaterials(speakerId);
+      sendJson(res, 200, {
+        ok: true,
+        data: {
+          ...result,
+          audioUrl: toMediaUrl(result.audioPath),
+        },
+      });
     } catch (err) {
       sendJson(res, 400, { ok: false, error: String((err as Error)?.message ?? err) });
     }

@@ -381,6 +381,19 @@ export function initDb(): void {
       UNIQUE(provider, group_id, feature_id)
     );
 
+    CREATE TABLE IF NOT EXISTS speaker_voiceprint_materials (
+      id TEXT PRIMARY KEY,
+      speaker_id TEXT NOT NULL,
+      segment_id TEXT NOT NULL,
+      material_status TEXT NOT NULL,
+      source TEXT,
+      note TEXT,
+      sort_order INTEGER,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(speaker_id, segment_id)
+    );
+
     CREATE TABLE IF NOT EXISTS segment_voiceprint_matches (
       id TEXT PRIMARY KEY,
       conversation_id TEXT NOT NULL,
@@ -467,6 +480,12 @@ export function initDb(): void {
       ON speaker_voiceprint_features(speaker_id);
     CREATE INDEX IF NOT EXISTS idx_speaker_voiceprint_features_status
       ON speaker_voiceprint_features(status);
+    CREATE INDEX IF NOT EXISTS idx_speaker_voiceprint_materials_speaker_id
+      ON speaker_voiceprint_materials(speaker_id);
+    CREATE INDEX IF NOT EXISTS idx_speaker_voiceprint_materials_segment_id
+      ON speaker_voiceprint_materials(segment_id);
+    CREATE INDEX IF NOT EXISTS idx_speaker_voiceprint_materials_status
+      ON speaker_voiceprint_materials(material_status);
     CREATE INDEX IF NOT EXISTS idx_segment_voiceprint_matches_segment_id
       ON segment_voiceprint_matches(segment_id);
     CREATE INDEX IF NOT EXISTS idx_segment_voiceprint_matches_conversation_id

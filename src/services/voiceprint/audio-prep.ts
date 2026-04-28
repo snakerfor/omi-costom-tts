@@ -83,7 +83,7 @@ export async function prepareSegmentClip(
   };
 }
 
-async function concatWavFiles(inputPaths: string[], outputPath: string): Promise<void> {
+export async function concatWavFiles(inputPaths: string[], outputPath: string): Promise<void> {
   const dir = path.dirname(outputPath);
   await fs.mkdir(dir, { recursive: true });
   const listPath = path.join(dir, `.concat-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}.txt`);
@@ -195,5 +195,73 @@ export async function prepareEnrollmentAudio(
     sizeBytes: 0,
     skipped: true,
     reason: 'enrollment_too_large',
+  };
+}
+
+export async function prepareMultiSourceEnrollmentAudio(
+  segmentWindows: Array<{
+    segmentId: string;
+    conversationId: string;
+    sourceAudioPath: string;
+    startMs: number;
+    endMs: number;
+  }>,
+  outputScopeId: string,
+  enrollmentBatchId: string,
+  options: EnrollmentAudioPrepOptions,
+): Promise<PreparedClipResult> {
+  const outDir = path.join(clipsDir, 'voiceprint', 'enrollments', outputScopeId, enrollmentBatchId);
+  await fs.mkdir(outDir, { recursive: true });
+
+  const tempClips: string[] = [];
+  const usableSegments = [...segmentWindows].sort((a, b) => (
+    a.conversationId.localeCompare(b.conversationId) ||
+    a.startMs - b.startMs ||
+    a.endMs - b.endMs
+  ));
+
+  for (const item of usableSegments) {
+    const prep = await prepareSegmentClip(
+      item.sourceAudioPath,
+      item.segmentId,
+      item.conversationId,
+      item.startMs,
+      item.endMs,
+      options,
+    );
+    if (!prep.skipped && prep.filePath) {
+      tempClips.push(prep.filePath);
+    }
+  }
+
+  if (!tempClips.length) {
+    return {
+      filePath: '',
+      durationMs: 0,
+      sizeBytes: 0,
+      skipped: true,
+      reason: 'no_usable_segments',
+    };
+  }
+
+  const outputPath = path.join(outDir, `${enrollmentBatchId}.wav`);
+  await concatWavFiles(tempClips, outputPath);
+  const stat = await fs.stat(outputPath);
+  if (stat.size > options.maxEnrollmentBytes) {
+    return {
+      filePath: outputPath,
+      durationMs: 0,
+      sizeBytes: stat.size,
+      skipped: true,
+      reason: 'enrollment_too_large',
+    };
+  }
+
+  const durationMs = usableSegments.reduce((sum, item) => sum + Math.max(0, item.endMs - item.startMs), 0);
+  return {
+    filePath: outputPath,
+    durationMs,
+    sizeBytes: stat.size,
+    skipped: false,
   };
 }
