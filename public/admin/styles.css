@@ -888,7 +888,8 @@ main {
   padding: 0;
   min-height: 0;
   max-height: 390px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .speaker-material-list.segment-list {
@@ -912,9 +913,9 @@ main {
 
 .compact-material-item {
   display: grid;
-  grid-template-columns: minmax(70px, 96px) minmax(160px, 210px) minmax(220px, 1fr) minmax(92px, auto) auto auto;
+  grid-template-columns: minmax(68px, 82px) minmax(124px, 150px) minmax(120px, 1fr) minmax(58px, 74px) auto max-content;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   padding: 8px 10px;
   min-height: 44px;
 }
@@ -975,14 +976,14 @@ main {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 4px;
   flex-wrap: nowrap;
   white-space: nowrap;
 }
 
 .speaker-material-actions button {
   min-height: 28px;
-  padding: 5px 9px;
+  padding: 5px 7px;
   font-size: 12px;
 }
 
