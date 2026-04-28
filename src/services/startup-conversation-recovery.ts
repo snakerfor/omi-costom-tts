@@ -43,6 +43,44 @@ function existingAudioFileId(filePath: string | null): string | null {
   return row?.id ?? null;
 }
 
+function repairPendingWavHeader(filePath: string | null): void {
+  if (!filePath || !fs.existsSync(filePath)) return;
+  const stat = fs.statSync(filePath);
+  if (stat.size < 44) return;
+
+  const fd = fs.openSync(filePath, 'r+');
+  try {
+    const marker = Buffer.alloc(4);
+    fs.readSync(fd, marker, 0, marker.length, 0);
+    if (marker.toString('ascii') === 'RIFF') return;
+
+    const dataSize = stat.size - 44;
+    const sampleRate = 16000;
+    const channels = 1;
+    const bitsPerSample = 16;
+    const byteRate = sampleRate * channels * bitsPerSample / 8;
+    const blockAlign = channels * bitsPerSample / 8;
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0);
+    header.writeUInt32LE(36 + dataSize, 4);
+    header.write('WAVE', 8);
+    header.write('fmt ', 12);
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20);
+    header.writeUInt16LE(channels, 22);
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(byteRate, 28);
+    header.writeUInt16LE(blockAlign, 32);
+    header.writeUInt16LE(bitsPerSample, 34);
+    header.write('data', 36);
+    header.writeUInt32LE(dataSize, 40);
+    fs.writeSync(fd, header, 0, header.length, 0);
+    console.log(`[StartupRecovery] repaired wav header: ${filePath}`);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 function markConversationFailed(conversationId: string, reason: string): void {
   const now = new Date().toISOString();
   db.prepare(`
@@ -68,6 +106,7 @@ function importRecoveredSegments(input: {
   const audioPath = input.row.audio_file_path && fs.existsSync(input.row.audio_file_path)
     ? input.row.audio_file_path
     : null;
+  repairPendingWavHeader(audioPath);
   const audioFileId = existingAudioFileId(audioPath) ?? (audioPath ? genId('aud') : null);
 
   const tx = db.transaction(() => {
