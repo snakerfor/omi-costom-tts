@@ -283,36 +283,6 @@ function remapSegmentsToOriginalTimeline(
   });
 }
 
-function alignFinalSegmentsToRecordingStart(
-  segments: FinalizedSegment[],
-  recordingStartedAt: string,
-): FinalizedSegment[] {
-  if (!segments.length) {
-    return segments;
-  }
-
-  const baseTime = new Date(recordingStartedAt).getTime();
-  if (!Number.isFinite(baseTime)) {
-    return segments;
-  }
-
-  return segments.map(segment => {
-    const absoluteStart = segment.absolute_start_time ? new Date(segment.absolute_start_time).getTime() : NaN;
-    const absoluteEnd = segment.absolute_end_time ? new Date(segment.absolute_end_time).getTime() : NaN;
-    if (!Number.isFinite(absoluteStart) || !Number.isFinite(absoluteEnd)) {
-      return segment;
-    }
-
-    const startMs = Math.max(0, Math.round(absoluteStart - baseTime));
-    const endMs = Math.max(startMs, Math.round(absoluteEnd - baseTime));
-    return {
-      ...segment,
-      start_ms: startMs,
-      end_ms: endMs,
-    };
-  });
-}
-
 function buildSegments(tokens: SonioxToken[], recordingStartedAt: string): FinalizedSegment[] {
   if (!tokens.length) return [];
 
@@ -407,10 +377,11 @@ export async function finalizeConversation(options: FinalizeConversationOptions)
 
   const events = raw ? parseNdjson(raw) : [];
   const timeline = await readTimelineMap(options.rawTranscriptPath);
-  const normalizedFinalSegments = normalizeFinalSegments(events);
-  const finalSegments = timeline.length
-    ? remapSegmentsToOriginalTimeline(normalizedFinalSegments, timeline, options.recordingStartedAt)
-    : alignFinalSegmentsToRecordingStart(normalizedFinalSegments, options.recordingStartedAt);
+  const finalSegments = remapSegmentsToOriginalTimeline(
+    normalizeFinalSegments(events),
+    timeline,
+    options.recordingStartedAt,
+  );
   const finalTokens = remapTokensToOriginalTimeline(normalizeFinalTokens(events), timeline);
   const segments = finalSegments.length ? finalSegments : buildSegments(finalTokens, options.recordingStartedAt);
 
