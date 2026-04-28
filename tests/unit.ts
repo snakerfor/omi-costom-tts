@@ -44,6 +44,12 @@ function testSegmentBuilder(): void {
   ]);
   assert.equal(finalSeg?.text, '你好世界');
   assert.equal(builder.flushPending(), null, 'final emission should clear pending buffer');
+
+  const startupNoise = builder.consumeFinal([
+    { text: 'But', start_ms: 0, end_ms: 0, confidence: 0.054, is_final: true },
+    { text: '.', start_ms: 0, end_ms: 0, confidence: 0.893, is_final: true },
+  ]);
+  assert.equal(startupNoise, null, 'zero-duration startup But hallucination should be ignored');
 }
 
 async function testFinalizeConversationHandlesMissingAndDuplicates(tmpDir: string): Promise<void> {
@@ -78,6 +84,27 @@ async function testFinalizeConversationHandlesMissingAndDuplicates(tmpDir: strin
 
   assert.equal(finalized.segments.length, 1, 'duplicate final tokens should collapse into one segment');
   assert.equal(finalized.segments[0]?.text, '你好');
+
+  const noiseRecorder = new FinalResultRecorder('session-noise', tmpDir);
+  await noiseRecorder.appendResult({
+    tokens: [
+      { text: 'But', start_ms: 0, end_ms: 0, confidence: 0.054, is_final: true },
+      { text: '.', start_ms: 0, end_ms: 0, confidence: 0.893, is_final: true },
+    ],
+  });
+  await noiseRecorder.appendFinalSegment({
+    id: 'seg-noise',
+    text: 'But.',
+    start: 0,
+    end: 0,
+  }, '2026-01-01T00:00:00.000Z', 'seg-noise');
+  const finalizedNoise = await finalizeConversation({
+    sessionId: 'session-noise',
+    rawTranscriptPath: noiseRecorder.filePath,
+    outputDir: tmpDir,
+    recordingStartedAt: '2026-01-01T00:00:00.000Z',
+  });
+  assert.equal(finalizedNoise.segments.length, 0, 'recorded startup But noise should not be finalized');
 
   const segmentRecorder = new FinalResultRecorder('session-b', tmpDir);
   await segmentRecorder.appendFinalSegment({

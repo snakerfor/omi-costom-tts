@@ -2,6 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { RawTranscriptEvent } from './final-result-recorder';
 import { SonioxToken } from '../types';
+import { isZeroDurationStartupNoise, isZeroDurationStartupNoiseTokens } from '../utils/transcript-noise';
 
 function genId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -120,6 +121,13 @@ function normalizeFinalSegments(events: RawTranscriptEvent[]): FinalizedSegment[
     if (!text) {
       continue;
     }
+    if (isZeroDurationStartupNoise({
+      text,
+      startMs: Number(segment.start_ms || 0),
+      endMs: Number(segment.end_ms || 0),
+    })) {
+      continue;
+    }
 
     const normalized: FinalizedSegment = {
       id: segment.id,
@@ -161,6 +169,7 @@ function normalizeFinalTokens(events: RawTranscriptEvent[]): SonioxToken[] {
   const out: SonioxToken[] = [];
   for (const e of events) {
     if (!Array.isArray(e.tokens)) continue;
+    if (isZeroDurationStartupNoiseTokens(e.tokens)) continue;
     for (const t of e.tokens) {
       if (!t?.is_final) continue;
       const text = (t.text || '').trim();

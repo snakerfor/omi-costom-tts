@@ -1,4 +1,5 @@
 import { SonioxToken, Segment } from '../types';
+import { isZeroDurationStartupNoise } from './transcript-noise';
 
 const SILENCE_GAP_MS = 500;
 const MAX_DURATION_MS = 15000;
@@ -50,6 +51,9 @@ export class SegmentBuilder {
     const endMs = tokens.at(-1)?.end_ms ?? startMs;
     const safeStart = Math.min(startMs, endMs) + this.timeOffsetMs;
     const safeEnd = Math.max(startMs, endMs) + this.timeOffsetMs;
+    if (isZeroDurationStartupNoise({ text, startMs: safeStart, endMs: safeEnd })) {
+      return null;
+    }
     const speaker = tokens[0]?.speaker;
 
     const seg: Segment = {
