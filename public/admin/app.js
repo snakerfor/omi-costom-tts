@@ -1232,10 +1232,7 @@
     qs('#conversation-title').textContent = detail.conversation.id;
     const dateLabel = qs('#conversation-date-label');
     if (dateLabel) {
-      const started = detail.conversation.started_at ? new Date(detail.conversation.started_at) : null;
-      dateLabel.textContent = started && !Number.isNaN(started.getTime())
-        ? `${started.getFullYear()}/${String(started.getMonth() + 1).padStart(2, '0')}/${String(started.getDate()).padStart(2, '0')}`
-        : '-';
+      dateLabel.textContent = `开始 ${formatDate(detail.conversation.started_at)} · 结束 ${formatDate(detail.conversation.ended_at)}`;
     }
     qs('#conversation-session-id').textContent = detail.conversation.session_id;
     qs('#conversation-status').textContent = conversationStatusMeta(detail.conversation).label;
