@@ -68,6 +68,9 @@ export interface ConversationSegmentRow {
   voiceprint_top_speaker_id: string | null;
   voiceprint_top_speaker_name: string | null;
   voiceprint_top_speaker_identity: string | null;
+  voiceprint_second_speaker_id: string | null;
+  voiceprint_second_speaker_name: string | null;
+  voiceprint_second_speaker_identity: string | null;
   speaker_confirmed: number;
 }
 
@@ -397,6 +400,9 @@ export function getConversationDetail(conversationId: string): ConversationDetai
       svm.top_speaker_id AS voiceprint_top_speaker_id,
       COALESCE(vps.name, vps.display_label) AS voiceprint_top_speaker_name,
       vps.identity_label AS voiceprint_top_speaker_identity,
+      svm.second_speaker_id AS voiceprint_second_speaker_id,
+      COALESCE(vps2.name, vps2.display_label) AS voiceprint_second_speaker_name,
+      vps2.identity_label AS voiceprint_second_speaker_identity,
       CASE
         WHEN s.id IS NOT NULL AND s.name IS NOT NULL AND TRIM(s.name) != '' THEN 1
         ELSE 0
@@ -411,6 +417,7 @@ export function getConversationDetail(conversationId: string): ConversationDetai
       LIMIT 1
     )
     LEFT JOIN speakers vps ON vps.id = svm.top_speaker_id
+    LEFT JOIN speakers vps2 ON vps2.id = svm.second_speaker_id
     WHERE cs.conversation_id = ?
     ORDER BY cs.start_ms ASC, cs.created_at ASC
   `).all(conversationId) as ConversationSegmentRow[];

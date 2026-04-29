@@ -182,7 +182,7 @@
     }
     const labels = {
       xfyun_low_confidence: { label: lowConfidenceLabel(segment), className: 'warning' },
-      xfyun_conflict: { label: '冲突', className: 'warning' },
+      xfyun_conflict: { label: conflictLabel(segment), className: 'warning' },
       xfyun_no_match: { label: '未命中', className: 'warning' },
       xfyun_error: { label: '识别错误', className: 'danger' },
       xfyun_skipped_short: { label: '片段过短', className: 'warning' },
@@ -215,21 +215,6 @@
     return '低置信 0';
   }
 
-  function materialUsageMeta(segment) {
-    if (segment?.speaker_id || segment?.speaker_name) {
-      return { label: `正式语料 · ${conversationDisplaySpeaker(segment)}`, className: 'material-confirmed' };
-    }
-    const statusKey = segmentStatusKey(segment);
-    if (statusKey === 'low') {
-      const target = segment?.voiceprint_top_speaker_name || segment?.voiceprint_top_speaker_id || '候选';
-      return { label: `加入${target}候选`, className: 'material-candidate' };
-    }
-    if (statusKey === 'short') {
-      return { label: '不可加入语料', className: 'material-disabled' };
-    }
-    return { label: '候选语料', className: 'material-candidate' };
-  }
-
   function formatScore(value) {
     if (value == null || value === '') return '-';
     const score = Number(value);
@@ -237,14 +222,32 @@
     return score > 1 ? score.toFixed(1) : score.toFixed(3);
   }
 
+  function voiceprintCandidateLabel(segment, prefix) {
+    const name = segment?.[`${prefix}_speaker_name`] || segment?.[`${prefix}_speaker_id`];
+    const identity = segment?.[`${prefix}_speaker_identity`];
+    if (!name) return '';
+    return identity ? `${name}/${identity}` : name;
+  }
+
   function lowConfidenceLabel(segment) {
     const score = segment?.voiceprint_top_score ?? segment?.confidence;
-    const speakerName = segment?.voiceprint_top_speaker_name || segment?.voiceprint_top_speaker_id;
-    const speaker = segment?.voiceprint_top_speaker_identity && speakerName
-      ? `${speakerName}/${segment.voiceprint_top_speaker_identity}`
-      : speakerName;
-    const parts = [`低置信 ${formatScore(score)}`];
+    const speaker = voiceprintCandidateLabel(segment, 'voiceprint_top');
+    const parts = ['低置信'];
     if (speaker) parts.push(speaker);
+    parts.push(formatScore(score));
+    return parts.join(' · ');
+  }
+
+  function conflictLabel(segment) {
+    const topScore = segment?.voiceprint_top_score ?? segment?.confidence;
+    const topSpeaker = voiceprintCandidateLabel(segment, 'voiceprint_top');
+    const secondSpeaker = voiceprintCandidateLabel(segment, 'voiceprint_second');
+    const parts = ['冲突'];
+    if (topSpeaker) parts.push(`Top1 ${topSpeaker} ${formatScore(topScore)}`);
+    if (secondSpeaker || segment?.voiceprint_second_score != null) {
+      parts.push(`Top2 ${secondSpeaker || '-'} ${formatScore(segment?.voiceprint_second_score)}`);
+    }
+    if (parts.length === 1) parts.push(formatScore(topScore));
     return parts.join(' · ');
   }
 
@@ -1112,7 +1115,6 @@
         const timeMeta = formatAbsoluteTimeMeta(segment.absolute_start_time, segment.absolute_end_time);
         const statusMeta = segmentStatusMeta(segment);
         const statusKey = segmentStatusKey(segment);
-        const materialMeta = materialUsageMeta(segment);
         const speakerAction = segment.speaker_id
           ? `<button type="button" class="inline-action compact-action secondary-button" data-go-speaker="${escapeHtml(segment.speaker_id)}">查看发言人</button>`
           : '';
@@ -1136,7 +1138,6 @@
             <div class="transcript-actions">
               <div class="transcript-action-row">
                 <span class="transcript-status-text ${statusMeta.className}">${escapeHtml(statusMeta.label)}</span>
-                <span class="transcript-material-text ${materialMeta.className}">${escapeHtml(materialMeta.label)}</span>
                 <button type="button" class="inline-action compact-action secondary-button" data-play-segment="${escapeHtml(segment.id)}">试听</button>
                 ${speakerAction}
               </div>

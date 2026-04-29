@@ -17,7 +17,7 @@ import { StreamVadGate } from '../services/stream-vad-gate';
 import { SentAudioRingBuffer } from '../services/sent-audio-ring-buffer';
 import { syncConversationSegments } from '../services/knowledge-ingest';
 import { audioUploadsDir, finalizedResultsDir, rawResultsDir } from '../runtime-paths';
-import { identifyRealtimeVoiceprintSpeakerFromPcm } from '../services/voiceprint/segment-voiceprint-service';
+import { identifyRealtimeVoiceprintSpeakerFromPcm, recordRealtimeVoiceprintMatch } from '../services/voiceprint/segment-voiceprint-service';
 
 function shouldRunSpeakerIdentityMapping(): boolean {
   return process.env.ENABLE_SPEAKER_IDENTITY_MAPPING === 'true';
@@ -480,6 +480,17 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       );
       if (!match) {
         return seg;
+      }
+
+      try {
+        recordRealtimeVoiceprintMatch({
+          conversationId,
+          segmentId: seg.id || genId('seg'),
+          durationMs: pcm.durationMs,
+          result: match,
+        });
+      } catch (err) {
+        console.warn('[XFYUN] realtime voiceprint match persist failed:', String((err as Error)?.message ?? err));
       }
 
       const enrichedBase: Segment = {

@@ -144,11 +144,21 @@ export interface ConversationVoiceprintOverview {
 
 export interface RealtimeVoiceprintMatchResult {
   decision: string;
+  provider: string;
+  groupId: string | null;
   speakerId: string | null;
   speakerName: string | null;
   speakerIdentity: string | null;
   score: number | null;
+  topFeatureId: string | null;
+  topSpeakerId: string | null;
+  topSpeakerName: string | null;
+  topSpeakerIdentity: string | null;
   secondScore: number | null;
+  secondFeatureId: string | null;
+  secondSpeakerId: string | null;
+  secondSpeakerName: string | null;
+  rawResponseJson: string | null;
 }
 
 interface ConversationRow {
@@ -422,6 +432,31 @@ function mapFeatureIdToSpeaker(groupId: string, featureId: string | null | undef
   return speaker || null;
 }
 
+export function recordRealtimeVoiceprintMatch(input: {
+  conversationId: string;
+  segmentId: string;
+  durationMs: number | null;
+  result: RealtimeVoiceprintMatchResult;
+}): void {
+  buildMatchRow({
+    conversationId: input.conversationId,
+    segmentId: input.segmentId,
+    provider: input.result.provider,
+    groupId: input.result.groupId,
+    requestAudioPath: null,
+    requestDurationMs: input.durationMs,
+    decision: input.result.decision,
+    topFeatureId: input.result.topFeatureId,
+    topSpeakerId: input.result.topSpeakerId,
+    topScore: input.result.score,
+    secondFeatureId: input.result.secondFeatureId,
+    secondSpeakerId: input.result.secondSpeakerId,
+    secondScore: input.result.secondScore,
+    rawResponseJson: input.result.rawResponseJson,
+    errorMessage: null,
+  });
+}
+
 function isXfyunEmptyFeatureDbError(err: unknown): boolean {
   const message = String((err as Error)?.message ?? err);
   return message.includes('23008') || message.includes('does not have feature');
@@ -598,11 +633,21 @@ export async function identifyRealtimeVoiceprintSpeakerFromPcm(
   if (durationMs < minSegmentMs || audioBuffer.length === 0) {
     return {
       decision: SKIPPED_SHORT_METHOD,
+      provider: 'xfyun',
+      groupId: config.groupId,
       speakerId: null,
       speakerName: null,
       speakerIdentity: null,
       score: null,
+      topFeatureId: null,
+      topSpeakerId: null,
+      topSpeakerName: null,
+      topSpeakerIdentity: null,
       secondScore: null,
+      secondFeatureId: null,
+      secondSpeakerId: null,
+      secondSpeakerName: null,
+      rawResponseJson: null,
     };
   }
 
@@ -615,37 +660,71 @@ export async function identifyRealtimeVoiceprintSpeakerFromPcm(
     const threshold = scoreThresholdForDuration(durationMs);
     const { decision, top, second } = classifyDecision(scoreList, threshold, margin);
     const topSpeaker = mapFeatureIdToSpeaker(config.groupId, top?.featureId);
+    const secondSpeaker = mapFeatureIdToSpeaker(config.groupId, second?.featureId);
     const topScore = top ? normalizeScore(Number(top.score)) : null;
     const secondScore = second ? normalizeScore(Number(second.score)) : null;
+    const topSpeakerId = topSpeaker?.id || mapFeatureIdToSpeakerId(config.groupId, top?.featureId);
+    const secondSpeakerId = secondSpeaker?.id || mapFeatureIdToSpeakerId(config.groupId, second?.featureId);
+    const rawResponseJson = JSON.stringify(response.raw);
 
     if (decision === AUTO_HIT_METHOD && topSpeaker) {
       return {
         decision: AUTO_HIT_METHOD,
+        provider: 'xfyun',
+        groupId: config.groupId,
         speakerId: topSpeaker.id,
         speakerName: topSpeaker.name,
         speakerIdentity: topSpeaker.identity_label,
         score: topScore,
+        topFeatureId: top?.featureId || null,
+        topSpeakerId,
+        topSpeakerName: topSpeaker.name,
+        topSpeakerIdentity: topSpeaker.identity_label,
         secondScore,
+        secondFeatureId: second?.featureId || null,
+        secondSpeakerId,
+        secondSpeakerName: secondSpeaker?.name || null,
+        rawResponseJson,
       };
     }
 
     return {
       decision: decision === AUTO_HIT_METHOD ? NO_MATCH_METHOD : decision,
+      provider: 'xfyun',
+      groupId: config.groupId,
       speakerId: null,
       speakerName: null,
       speakerIdentity: null,
       score: topScore,
+      topFeatureId: top?.featureId || null,
+      topSpeakerId,
+      topSpeakerName: topSpeaker?.name || null,
+      topSpeakerIdentity: topSpeaker?.identity_label || null,
       secondScore,
+      secondFeatureId: second?.featureId || null,
+      secondSpeakerId,
+      secondSpeakerName: secondSpeaker?.name || null,
+      rawResponseJson,
     };
   } catch (err) {
     if (isXfyunEmptyFeatureDbError(err)) {
       return {
         decision: NO_MATCH_METHOD,
+        provider: 'xfyun',
+        groupId: config.groupId,
         speakerId: null,
         speakerName: null,
         speakerIdentity: null,
         score: null,
+        topFeatureId: null,
+        topSpeakerId: null,
+        topSpeakerName: null,
+        topSpeakerIdentity: null,
         secondScore: null,
+        secondFeatureId: null,
+        secondSpeakerId: null,
+        secondSpeakerName: null,
+        rawResponseJson: null,
       };
     }
     throw err;
