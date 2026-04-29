@@ -219,7 +219,21 @@ async function readTimelineMap(rawTranscriptPath: string): Promise<TimelineMapEn
   }
 }
 
-function mapSentMsToOriginalMs(value: number, timeline: TimelineMapEntry[]): number {
+function timelineOriginalEndMs(timeline: TimelineMapEntry[]): number | null {
+  if (!timeline.length) {
+    return null;
+  }
+  return Math.max(...timeline.map(entry => entry.original_end_ms));
+}
+
+function clampTimelineOriginalMs(value: number, originalEndMs: number | null): number {
+  if (originalEndMs == null || !Number.isFinite(originalEndMs)) {
+    return value;
+  }
+  return Math.min(value, originalEndMs);
+}
+
+function mapSentMsToOriginalMs(value: number, timeline: TimelineMapEntry[], originalEndMs: number | null): number {
   if (!timeline.length || !Number.isFinite(value)) {
     return value;
   }
@@ -230,16 +244,16 @@ function mapSentMsToOriginalMs(value: number, timeline: TimelineMapEntry[]): num
     }
     if (value <= entry.sent_end_ms) {
       const delta = value - entry.sent_start_ms;
-      return Math.min(entry.original_end_ms, entry.original_start_ms + delta);
+      return clampTimelineOriginalMs(Math.min(entry.original_end_ms, entry.original_start_ms + delta), originalEndMs);
     }
   }
 
   const last = timeline[timeline.length - 1];
   if (value > last.sent_end_ms) {
-    return last.original_end_ms + (value - last.sent_end_ms);
+    return clampTimelineOriginalMs(last.original_end_ms + (value - last.sent_end_ms), originalEndMs);
   }
 
-  return value;
+  return clampTimelineOriginalMs(value, originalEndMs);
 }
 
 function remapTokensToOriginalTimeline(tokens: SonioxToken[], timeline: TimelineMapEntry[]): SonioxToken[] {
@@ -247,11 +261,12 @@ function remapTokensToOriginalTimeline(tokens: SonioxToken[], timeline: Timeline
     return tokens;
   }
 
+  const originalEndMs = timelineOriginalEndMs(timeline);
   return tokens.map(token => {
     const startMs = Number(token.start_ms || 0);
     const endMs = Number(token.end_ms || startMs);
-    const mappedStart = mapSentMsToOriginalMs(startMs, timeline);
-    const mappedEnd = Math.max(mappedStart, mapSentMsToOriginalMs(endMs, timeline));
+    const mappedStart = mapSentMsToOriginalMs(startMs, timeline, originalEndMs);
+    const mappedEnd = Math.max(mappedStart, mapSentMsToOriginalMs(endMs, timeline, originalEndMs));
     return {
       ...token,
       start_ms: mappedStart,
@@ -270,9 +285,10 @@ function remapSegmentsToOriginalTimeline(
   }
 
   const baseTime = new Date(recordingStartedAt).getTime();
+  const originalEndMs = timelineOriginalEndMs(timeline);
   return segments.map(segment => {
-    const mappedStart = mapSentMsToOriginalMs(segment.start_ms, timeline);
-    const mappedEnd = Math.max(mappedStart, mapSentMsToOriginalMs(segment.end_ms, timeline));
+    const mappedStart = mapSentMsToOriginalMs(segment.start_ms, timeline, originalEndMs);
+    const mappedEnd = Math.max(mappedStart, mapSentMsToOriginalMs(segment.end_ms, timeline, originalEndMs));
     return {
       ...segment,
       start_ms: mappedStart,

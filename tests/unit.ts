@@ -132,6 +132,38 @@ async function testFinalizeConversationHandlesMissingAndDuplicates(tmpDir: strin
   assert.equal(finalizedFromSegments.segments[0]?.speaker_id, 'spk-1');
   assert.equal(finalizedFromSegments.segments[0]?.speaker_name, '党蟒');
   assert.equal(finalizedFromSegments.segments[0]?.resolution_method, 'xfyun_segment_hit');
+
+  const clampedRecorder = new FinalResultRecorder('session-clamped', tmpDir);
+  await clampedRecorder.appendFinalSegment({
+    id: 'seg-clamped',
+    text: '尾部时间不能超过原始音频',
+    start: 0.8,
+    end: 2.5,
+  }, '2026-01-01T00:00:00.000Z', 'seg-clamped');
+  await fs.writeFile(
+    `${clampedRecorder.filePath}.timeline.json`,
+    JSON.stringify({
+      session_id: 'session-clamped',
+      entries: [
+        {
+          sent_start_ms: 0,
+          sent_end_ms: 1000,
+          original_start_ms: 0,
+          original_end_ms: 1000,
+        },
+      ],
+    }),
+    'utf8',
+  );
+
+  const finalizedClamped = await finalizeConversation({
+    sessionId: 'session-clamped',
+    rawTranscriptPath: clampedRecorder.filePath,
+    outputDir: tmpDir,
+    recordingStartedAt: '2026-01-01T00:00:00.000Z',
+  });
+  assert.equal(finalizedClamped.segments[0]?.start_ms, 800, 'timeline remap should preserve in-range starts');
+  assert.equal(finalizedClamped.segments[0]?.end_ms, 1000, 'timeline remap should clamp tails to original audio');
 }
 
 async function testAudioFileWriterStreams(tmpDir: string): Promise<void> {

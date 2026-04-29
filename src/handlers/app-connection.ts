@@ -394,6 +394,47 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     scheduleTimelineMapWrite();
   }
 
+  function mapSentMsToOriginalMs(value: number): number {
+    if (!sentToOriginalTimeline.length || !Number.isFinite(value)) {
+      return value;
+    }
+
+    for (const entry of sentToOriginalTimeline) {
+      if (value < entry.sent_start_ms) {
+        continue;
+      }
+      if (value <= entry.sent_end_ms) {
+        const delta = value - entry.sent_start_ms;
+        return Math.min(entry.original_end_ms, entry.original_start_ms + delta);
+      }
+    }
+
+    const last = sentToOriginalTimeline[sentToOriginalTimeline.length - 1];
+    const totalAudioMs = vadGate.getStatsSnapshot().totalAudioMs;
+    if (value > last.sent_end_ms) {
+      return Math.min(totalAudioMs, last.original_end_ms + (value - last.sent_end_ms));
+    }
+
+    return Math.min(totalAudioMs, value);
+  }
+
+  function remapSegmentToOriginalTimeline(seg: Segment): Segment {
+    if (!sentToOriginalTimeline.length) {
+      return seg;
+    }
+
+    const startMs = Math.round(Number(seg.start || 0) * 1000);
+    const endMs = Math.max(startMs, Math.round(Number(seg.end || 0) * 1000));
+    const mappedStartMs = mapSentMsToOriginalMs(startMs);
+    const mappedEndMs = Math.max(mappedStartMs, mapSentMsToOriginalMs(endMs));
+
+    return {
+      ...seg,
+      start: mappedStartMs / 1000,
+      end: mappedEndMs / 1000,
+    };
+  }
+
   async function writeTimelineMapSnapshot(): Promise<void> {
     await recorderReady;
     await fs.writeFile(
@@ -560,8 +601,9 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     } catch (err) {
       console.error('[Recorder] append final segment failed:', err);
     }
-    console.log('[Soniox] Final:', JSON.stringify(enriched));
-    ws.send(JSON.stringify({ segments: [enriched] }));
+    const clientSegment = remapSegmentToOriginalTimeline(enriched);
+    console.log('[Soniox] Final:', JSON.stringify(clientSegment));
+    ws.send(JSON.stringify({ segments: [clientSegment] }));
   }
 
   function sendFinalSegment(seg: Segment): void {
