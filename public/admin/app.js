@@ -15,6 +15,7 @@
     selectedConversationId: null,
     selectedConversationDetail: null,
     selectedConversationSpeakerFilter: null,
+    showAllConversationSpeakers: false,
     selectedConversationStatusFilter: '',
     hideShortConversationSegments: false,
     conversationSegmentPagination: { page: 1, pageSize: 30, total: 0, totalPages: 1 },
@@ -825,6 +826,7 @@
       node.addEventListener('click', () => {
         state.selectedConversationId = node.getAttribute('data-conversation-id');
         state.selectedConversationSpeakerFilter = null;
+        state.showAllConversationSpeakers = false;
         renderConversationList();
         loadConversationDetail(state.selectedConversationId).catch(showError);
       });
@@ -1030,8 +1032,22 @@
 
   function renderConversationSpeakerSummary(detail) {
     const speakerCards = buildConversationSpeakerCards(detail);
-    const visibleCards = speakerCards.slice(0, 4);
-    qs('#conversation-speakers').innerHTML = visibleCards.length
+    const speakerContainer = qs('#conversation-speakers');
+    const speakerWrap = speakerContainer?.closest('.conversation-speakers-wrap');
+    if (speakerWrap) speakerWrap.classList.toggle('is-expanded', state.showAllConversationSpeakers);
+    const selectedOverflowCard = state.selectedConversationSpeakerFilter
+      ? speakerCards.find((speaker) => speaker.key === state.selectedConversationSpeakerFilter)
+      : null;
+    const visibleCards = state.showAllConversationSpeakers
+      ? speakerCards
+      : speakerCards.slice(0, 4);
+    if (
+      selectedOverflowCard
+      && !visibleCards.some((speaker) => speaker.key === selectedOverflowCard.key)
+    ) {
+      visibleCards[visibleCards.length - 1] = selectedOverflowCard;
+    }
+    speakerContainer.innerHTML = visibleCards.length
       ? visibleCards.map((speaker) => {
         const isActive = state.selectedConversationSpeakerFilter === speaker.key;
         const meta = conversationParticipantMeta(speaker);
@@ -1047,16 +1063,19 @@
       }).join('')
       : '<p class="subtle">暂无参与者信息。</p>';
 
-    const overflow = Math.max(0, speakerCards.length - visibleCards.length);
+    const overflow = Math.max(0, speakerCards.length - 4);
     const clearButton = qs('#conversation-clear-speaker-filter');
     if (clearButton) {
-      clearButton.textContent = overflow ? `+${overflow}` : '+0';
+      clearButton.textContent = state.selectedConversationSpeakerFilter
+        ? '全部'
+        : (state.showAllConversationSpeakers ? '收起' : `+${overflow}`);
       clearButton.classList.toggle('hidden', overflow === 0 && !state.selectedConversationSpeakerFilter);
     }
 
-    qs('#conversation-speakers').querySelectorAll('[data-conversation-speaker-filter]').forEach((node) => {
+    speakerContainer.querySelectorAll('[data-conversation-speaker-filter]').forEach((node) => {
       node.addEventListener('click', () => {
         state.selectedConversationSpeakerFilter = node.getAttribute('data-conversation-speaker-filter') || null;
+        state.showAllConversationSpeakers = false;
         state.conversationSegmentPagination.page = 1;
         renderConversationSpeakerFilter(detail);
         renderConversationSpeakerSummary(detail);
@@ -1196,6 +1215,7 @@
     qs('#conversation-audio-empty').classList.remove('hidden');
     state.selectedConversationDetail = null;
     state.selectedConversationSpeakerFilter = null;
+    state.showAllConversationSpeakers = false;
     state.selectedConversationStatusFilter = '';
     state.hideShortConversationSegments = false;
     state.conversationSegmentPagination.page = 1;
@@ -1514,7 +1534,12 @@
     });
 
     qs('#conversation-clear-speaker-filter').addEventListener('click', () => {
-      state.selectedConversationSpeakerFilter = null;
+      if (state.selectedConversationSpeakerFilter) {
+        state.selectedConversationSpeakerFilter = null;
+        state.showAllConversationSpeakers = false;
+      } else {
+        state.showAllConversationSpeakers = !state.showAllConversationSpeakers;
+      }
       state.conversationSegmentPagination.page = 1;
       if (state.selectedConversationDetail) {
         renderConversationSpeakerFilter(state.selectedConversationDetail);

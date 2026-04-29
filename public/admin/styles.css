@@ -1466,12 +1466,22 @@ main {
   background: #f8f6f2;
 }
 
+.conversation-speakers-wrap.is-expanded {
+  height: auto;
+  min-height: 68px;
+}
+
 .conversation-speakers-wrap .segment-list {
   flex: 1;
   display: flex;
   gap: 8px;
   min-width: 0;
   overflow: hidden;
+}
+
+.conversation-speakers-wrap.is-expanded .segment-list {
+  flex-wrap: wrap;
+  overflow: visible;
 }
 
 .conversation-speakers-wrap .speaker-summary-item {
@@ -1482,6 +1492,11 @@ main {
   border: 0;
   border-radius: 10px;
   background: #fff;
+}
+
+.conversation-speakers-wrap.is-expanded .speaker-summary-item {
+  flex: 1 1 180px;
+  height: 52px;
 }
 
 .speaker-summary-item .speaker-summary-main {
