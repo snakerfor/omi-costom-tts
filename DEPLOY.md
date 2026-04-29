@@ -60,6 +60,7 @@ PORT=28089
 DATA_ROOT=/www/omi-custom-tts-data
 DB_PATH=/www/omi-custom-tts-data/app.db
 SONIOX_LANGUAGE_HINTS=zh,en
+SESSION_MAX_DURATION_MS=1800000
 EOF
 ```
 
@@ -68,6 +69,7 @@ EOF
 - `DATA_ROOT` 建议显式配置，运行时数据不要和 git 工作树混放
 - `DB_PATH` 建议显式配置，避免服务默认写入当前工作目录下的 `app.db`
 - 音频、raw/finalized/preview 结果、桌面视频 chunk 默认都会跟随 `DATA_ROOT`
+- `SESSION_MAX_DURATION_MS` 默认 1800000，即 30 分钟；到时服务会结束当前会话并关闭连接，客户端重连后生成新的对话
 
 ### 2.1 现有服务器从旧结构升级
 

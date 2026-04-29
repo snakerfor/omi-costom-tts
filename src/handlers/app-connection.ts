@@ -28,6 +28,22 @@ function genId(prefix: string): string {
 }
 
 const activeConnectionsByUid = new Map<string, WebSocket>();
+const DEFAULT_SESSION_MAX_DURATION_MS = 30 * 60 * 1000;
+
+function readDurationMsEnv(name: string, defaultValue: number): number {
+  const raw = process.env[name];
+  if (raw == null || raw.trim() === '') {
+    return defaultValue;
+  }
+
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
+    console.warn(`[Config] Invalid ${name}=${raw}; using ${defaultValue}`);
+    return defaultValue;
+  }
+
+  return value;
+}
 
 function resolveClientUid(req: IncomingMessage): string {
   const url = new URL(req.url ?? '', 'ws://localhost');
@@ -72,6 +88,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   let lastAudioPacketAtMs = Date.now();
   let accumulatedSilenceMs = 0;
   let idleWatchdog: NodeJS.Timeout | null = null;
+  let maxSessionTimer: NodeJS.Timeout | null = null;
   let sentTimelineCursorMs = 0;
   let finalSegmentQueue = Promise.resolve();
   const sentToOriginalTimeline: Array<{
@@ -93,10 +110,11 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   const sentAudioRing = new SentAudioRingBuffer(
     Number(process.env.XFYUN_REALTIME_RING_BUFFER_MS ?? 120000),
   );
-  const realtimeVoiceprintTimeoutMs = Number(process.env.XFYUN_REALTIME_TIMEOUT_MS ?? 30000);
-  const streamSilenceFinalizeMs = Number(process.env.STREAM_SILENCE_FINALIZE_MS ?? 0);
-  const streamNoAudioFinalizeMs = Number(process.env.STREAM_NO_AUDIO_FINALIZE_MS ?? 0);
-  const streamIdleFinalizeMs = Number(process.env.STREAM_IDLE_FINALIZE_MS ?? 0);
+  const realtimeVoiceprintTimeoutMs = readDurationMsEnv('XFYUN_REALTIME_TIMEOUT_MS', 30000);
+  const streamSilenceFinalizeMs = readDurationMsEnv('STREAM_SILENCE_FINALIZE_MS', 0);
+  const streamNoAudioFinalizeMs = readDurationMsEnv('STREAM_NO_AUDIO_FINALIZE_MS', 0);
+  const streamIdleFinalizeMs = readDurationMsEnv('STREAM_IDLE_FINALIZE_MS', 0);
+  const sessionMaxDurationMs = readDurationMsEnv('SESSION_MAX_DURATION_MS', DEFAULT_SESSION_MAX_DURATION_MS);
 
   // Audio file writer - saves WAV with RIFF header
   const sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -159,9 +177,10 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     }
   }
 
-  async function finalizeOnce(reason: 'close_stream' | 'ws_close' | 'soniox_error'): Promise<void> {
+  async function finalizeOnce(reason: 'close_stream' | 'ws_close' | 'soniox_error' | 'timeout'): Promise<void> {
     if (finalizeStarted) return;
     finalizeStarted = true;
+    clearSessionTimers();
 
     await recorderReady.catch(() => undefined);
     await ensureWavFinalized('[AudioFile] Saved WAV:');
@@ -331,6 +350,18 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     }
   }
 
+  function clearMaxSessionTimer(): void {
+    if (maxSessionTimer) {
+      clearTimeout(maxSessionTimer);
+      maxSessionTimer = null;
+    }
+  }
+
+  function clearSessionTimers(): void {
+    clearIdleWatchdog();
+    clearMaxSessionTimer();
+  }
+
   function chunkDurationMs(data: Buffer): number {
     // PCM s16le mono 16k
     return Math.round((data.length / 2 / 16000) * 1000);
@@ -416,7 +447,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     void sonioxSession?.finish().catch(err => {
       console.warn('[Soniox] finish failed during timeout finalize:', String((err as Error)?.message ?? err));
     });
-    void finalizeOnce('ws_close');
+    void finalizeOnce('timeout');
 
     try {
       ws.close(4000, reason);
@@ -741,7 +772,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     void Promise.resolve(sonioxSession?.close()).catch(err => {
       console.warn('[Soniox] close skipped during websocket shutdown:', String((err as Error)?.message ?? err));
     });
-    clearIdleWatchdog();
+    clearSessionTimers();
     void finalizeOnce('ws_close');
   });
 
@@ -763,4 +794,10 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       finalizeByTimeout(`idle_timeout_${streamIdleFinalizeMs}ms`);
     }
   }, 5000);
+
+  if (sessionMaxDurationMs > 0) {
+    maxSessionTimer = setTimeout(() => {
+      finalizeByTimeout(`max_session_duration_${sessionMaxDurationMs}ms`);
+    }, sessionMaxDurationMs);
+  }
 }
