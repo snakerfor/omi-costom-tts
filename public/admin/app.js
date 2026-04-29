@@ -25,6 +25,7 @@
     materialSpeakerMode: 'existing',
   };
   let conversationPlaybackStopTimer = null;
+  let conversationPlaybackActiveSegmentId = null;
   let speakerPreviewAudio = null;
   let speakerPreviewStopTimer = null;
   const conversationPlaybackStartOffsetMs = 0;
@@ -847,6 +848,14 @@
     }
   }
 
+  function stopConversationSegmentPlayback(player = qs('#conversation-audio-player')) {
+    clearConversationPlaybackTimer();
+    conversationPlaybackActiveSegmentId = null;
+    if (player) {
+      player.pause();
+    }
+  }
+
   function isExpectedPlaybackInterruption(err) {
     const name = String(err?.name || '');
     const message = String(err?.message || err || '');
@@ -947,6 +956,13 @@
       throw new Error('当前会话没有可播放音频');
     }
 
+    if (conversationPlaybackActiveSegmentId === segment.id) {
+      stopConversationSegmentPlayback(player);
+      return;
+    }
+
+    stopConversationSegmentPlayback(player);
+    conversationPlaybackActiveSegmentId = segment.id;
     const rawStartMs = Math.max(0, Number(segment.start_ms || 0));
     const rawEndMs = Math.max(rawStartMs, Number(segment.end_ms || 0));
     const startSec = Math.max(0, (rawStartMs + conversationPlaybackStartOffsetMs) / 1000);
@@ -955,12 +971,15 @@
       (rawEndMs + conversationPlaybackStartOffsetMs + conversationPlaybackEndPaddingMs) / 1000,
     );
     const startPlayback = () => {
-      clearConversationPlaybackTimer();
+      if (conversationPlaybackActiveSegmentId !== segment.id) return;
       player.currentTime = startSec;
       playMediaElement(player, () => {
+        if (conversationPlaybackActiveSegmentId !== segment.id) return;
         conversationPlaybackStopTimer = window.setTimeout(() => {
+          if (conversationPlaybackActiveSegmentId !== segment.id) return;
           player.pause();
           player.currentTime = endSec;
+          conversationPlaybackActiveSegmentId = null;
         }, Math.max(200, Math.round((endSec - startSec) * 1000) + 120));
       });
     };
@@ -1208,8 +1227,7 @@
       errorBanner.textContent = '';
     }
     const player = qs('#conversation-audio-player');
-    clearConversationPlaybackTimer();
-    player.pause();
+    stopConversationSegmentPlayback(player);
     player.removeAttribute('src');
     player.classList.add('hidden');
     qs('#conversation-audio-empty').classList.remove('hidden');
@@ -1294,12 +1312,12 @@
 
     const audioPlayer = qs('#conversation-audio-player');
     const audioEmpty = qs('#conversation-audio-empty');
+    stopConversationSegmentPlayback(audioPlayer);
     if (detail.conversation.audio_file_url) {
       audioPlayer.src = detail.conversation.audio_file_url;
       audioPlayer.classList.remove('hidden');
       audioEmpty.classList.add('hidden');
     } else {
-      audioPlayer.pause();
       audioPlayer.removeAttribute('src');
       audioPlayer.classList.add('hidden');
       audioEmpty.classList.remove('hidden');

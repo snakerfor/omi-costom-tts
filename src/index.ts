@@ -180,7 +180,84 @@ function servePreviewAsset(reqPath: string, res: ServerResponse): boolean {
   return true;
 }
 
-function serveMediaAsset(reqPath: string, res: ServerResponse): boolean {
+function parseRangeHeader(rangeHeader: string | undefined, fileSize: number): { start: number; end: number } | null {
+  if (!rangeHeader) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+  if (!match) return null;
+
+  const [, rawStart, rawEnd] = match;
+  if (!rawStart && !rawEnd) return null;
+
+  let start: number;
+  let end: number;
+  if (!rawStart) {
+    const suffixLength = Number(rawEnd);
+    if (!Number.isFinite(suffixLength) || suffixLength <= 0) return null;
+    start = Math.max(0, fileSize - suffixLength);
+    end = fileSize - 1;
+  } else {
+    start = Number(rawStart);
+    end = rawEnd ? Number(rawEnd) : fileSize - 1;
+  }
+
+  if (
+    !Number.isInteger(start) ||
+    !Number.isInteger(end) ||
+    start < 0 ||
+    end < start ||
+    start >= fileSize
+  ) {
+    return null;
+  }
+
+  return {
+    start,
+    end: Math.min(end, fileSize - 1),
+  };
+}
+
+function serveMediaFile(req: IncomingMessage, res: ServerResponse, filePath: string): void {
+  const stat = fs.existsSync(filePath) ? fs.statSync(filePath) : null;
+  if (!stat?.isFile()) {
+    sendJson(res, 404, { ok: false, error: 'Not found' });
+    return;
+  }
+
+  const fileSize = stat.size;
+  const contentType = contentTypeForFile(filePath);
+  const headers = {
+    'Accept-Ranges': 'bytes',
+    'Content-Type': contentType,
+  };
+  const range = parseRangeHeader(Array.isArray(req.headers.range) ? req.headers.range[0] : req.headers.range, fileSize);
+
+  if (req.headers.range && !range) {
+    res.writeHead(416, {
+      ...headers,
+      'Content-Range': `bytes */${fileSize}`,
+    });
+    res.end();
+    return;
+  }
+
+  if (range) {
+    res.writeHead(206, {
+      ...headers,
+      'Content-Length': range.end - range.start + 1,
+      'Content-Range': `bytes ${range.start}-${range.end}/${fileSize}`,
+    });
+    fs.createReadStream(filePath, { start: range.start, end: range.end }).pipe(res);
+    return;
+  }
+
+  res.writeHead(200, {
+    ...headers,
+    'Content-Length': fileSize,
+  });
+  fs.createReadStream(filePath).pipe(res);
+}
+
+function serveMediaAsset(req: IncomingMessage, reqPath: string, res: ServerResponse): boolean {
   const relative = reqPath.replace(/^\/media\//, '');
   const slashIndex = relative.indexOf('/');
   if (slashIndex <= 0) {
@@ -197,7 +274,7 @@ function serveMediaAsset(reqPath: string, res: ServerResponse): boolean {
   const target = path.resolve(root, filePart);
   const relativeToRoot = path.relative(path.resolve(root), target);
   if (!relativeToRoot.startsWith('..') && !path.isAbsolute(relativeToRoot) && fs.existsSync(target) && fs.statSync(target).isFile()) {
-    serveFile(res, target);
+    serveMediaFile(req, res, target);
     return true;
   }
   sendJson(res, 404, { ok: false, error: 'Not found' });
@@ -865,7 +942,7 @@ const server = createServer((req, res) => {
     }
 
     if (req.method === 'GET' && urlObj.pathname.startsWith('/media/')) {
-      serveMediaAsset(urlObj.pathname, res);
+      serveMediaAsset(req, urlObj.pathname, res);
       return;
     }
 
