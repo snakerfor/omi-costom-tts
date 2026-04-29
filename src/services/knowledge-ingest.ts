@@ -34,9 +34,31 @@ export function syncConversationSegments(conversationId: string): number {
   const rows = db.prepare(`
     SELECT cs.id, cs.absolute_start_time, cs.absolute_end_time, cs.text,
            cs.speaker_label, cs.speaker_id, cs.speaker_name, cs.speaker_identity,
-           cs.confidence, c.session_id
+           cs.confidence, cs.resolution_method, c.session_id,
+           svm.provider AS voiceprint_provider,
+           svm.group_id AS voiceprint_group_id,
+           svm.decision AS voiceprint_decision,
+           svm.top_feature_id,
+           svm.top_speaker_id,
+           top_s.name AS top_speaker_name,
+           top_s.identity_label AS top_speaker_identity,
+           svm.top_score,
+           svm.second_feature_id,
+           svm.second_speaker_id,
+           second_s.name AS second_speaker_name,
+           second_s.identity_label AS second_speaker_identity,
+           svm.second_score
     FROM conversation_segments cs
     LEFT JOIN conversations c ON c.id = cs.conversation_id
+    LEFT JOIN segment_voiceprint_matches svm ON svm.id = (
+      SELECT svm2.id
+      FROM segment_voiceprint_matches svm2
+      WHERE svm2.segment_id = cs.id
+      ORDER BY svm2.created_at DESC
+      LIMIT 1
+    )
+    LEFT JOIN speakers top_s ON top_s.id = svm.top_speaker_id
+    LEFT JOIN speakers second_s ON second_s.id = svm.second_speaker_id
     WHERE cs.conversation_id = ?
       AND cs.absolute_start_time IS NOT NULL
       AND cs.text IS NOT NULL AND cs.text != ''
@@ -52,13 +74,38 @@ export function syncConversationSegments(conversationId: string): number {
       speaker_id: row.speaker_id,
       speaker_name: row.speaker_name,
       speaker_identity: row.speaker_identity,
+      speaker_confirmed: isConfirmedSpeakerAttribution(row.resolution_method, row.speaker_id),
+      attribution_confidence: row.confidence,
+      attribution_method: row.resolution_method,
+    });
+    const metadata = JSON.stringify({
+      speaker_attribution: {
+        resolution_method: row.resolution_method,
+        confidence: row.confidence,
+        evidence_strength: speakerEvidenceStrength(row.resolution_method, row.speaker_id),
+      },
+      voiceprint: {
+        provider: row.voiceprint_provider,
+        group_id: row.voiceprint_group_id,
+        decision: row.voiceprint_decision,
+        top_feature_id: row.top_feature_id,
+        top_speaker_id: row.top_speaker_id,
+        top_speaker_name: row.top_speaker_name,
+        top_speaker_identity: row.top_speaker_identity,
+        top_score: row.top_score,
+        second_feature_id: row.second_feature_id,
+        second_speaker_id: row.second_speaker_id,
+        second_speaker_name: row.second_speaker_name,
+        second_speaker_identity: row.second_speaker_identity,
+        second_score: row.second_score,
+      },
     });
 
     const result = stmt.run(
       genId('ke'), 'audio_realtime', 'conversation_segments', row.id, null,
       row.session_id, conversationId, 'speech_segment',
       row.absolute_start_time, row.absolute_end_time, row.text, null,
-      participants, null, row.confidence, `speech_segment:${row.id}`,
+      participants, metadata, row.confidence, `speech_segment:${row.id}`,
       now, now,
     ) as { changes: number };
     count += result.changes;
@@ -196,7 +243,7 @@ export async function aggregateNewConversations(): Promise<number> {
 
   for (const ref of newRefs) {
     const events = db.prepare(`
-      SELECT id, event_type, started_at, ended_at, content_text, title, participants_json
+      SELECT id, event_type, started_at, ended_at, content_text, title, participants_json, metadata_json
       FROM knowledge_events
       WHERE conversation_ref = ?
       ORDER BY started_at ASC
@@ -291,7 +338,7 @@ export async function extractNewMemories(options?: ExtractNewMemoriesOptions): P
 
   for (const conv of unprocessedConvs) {
     const events = db.prepare(`
-      SELECT ke.content_text, ke.participants_json, ke.started_at, ke.event_type
+      SELECT ke.content_text, ke.participants_json, ke.metadata_json, ke.started_at, ke.event_type
       FROM knowledge_conversation_items ki
       JOIN knowledge_events ke ON ke.id = ki.event_id
       WHERE ki.conversation_id = ?
@@ -303,8 +350,9 @@ export async function extractNewMemories(options?: ExtractNewMemoriesOptions): P
       .slice(0, 80)
       .map((e: any) => {
         const speaker = extractSpeaker(e.participants_json);
+        const attribution = formatAttribution(e.participants_json, e.metadata_json);
         const time = e.started_at.slice(11, 19);
-        return speaker ? `[${time} ${speaker}] ${e.content_text}` : `[${time}] ${e.content_text}`;
+        return speaker ? `[${time} ${speaker}${attribution}] ${e.content_text}` : `[${time}] ${e.content_text}`;
       });
 
     if (textParts.length < 2) continue;
@@ -419,6 +467,43 @@ function extractSpeaker(json: string | null): string | null {
   } catch { return null; }
 }
 
+function isConfirmedSpeakerAttribution(resolutionMethod: string | null, speakerId: string | null): boolean {
+  return !!speakerId && ['human_segment_confirmed', 'xfyun_segment_hit', 'xfyun_current_conversation_backfill_hit'].includes(String(resolutionMethod || ''));
+}
+
+function speakerEvidenceStrength(resolutionMethod: string | null, speakerId: string | null): 'confirmed' | 'weak' | 'unknown' {
+  const method = String(resolutionMethod || '');
+  if (isConfirmedSpeakerAttribution(method, speakerId)) return 'confirmed';
+  if (['xfyun_low_confidence', 'xfyun_conflict'].includes(method)) return 'weak';
+  return 'unknown';
+}
+
+function formatAttribution(participantsJson: string | null, metadataJson: string | null): string {
+  let method: string | null = null;
+  let confidence: number | null = null;
+  let strength: string | null = null;
+  try {
+    if (participantsJson) {
+      const p = JSON.parse(participantsJson);
+      method = p.attribution_method || null;
+      confidence = typeof p.attribution_confidence === 'number' ? p.attribution_confidence : null;
+    }
+  } catch {}
+  try {
+    if (metadataJson) {
+      const m = JSON.parse(metadataJson);
+      method = method || m?.speaker_attribution?.resolution_method || m?.voiceprint?.decision || null;
+      confidence = confidence ?? (typeof m?.speaker_attribution?.confidence === 'number' ? m.speaker_attribution.confidence : null);
+      strength = m?.speaker_attribution?.evidence_strength || null;
+    }
+  } catch {}
+  const parts: string[] = [];
+  if (strength) parts.push(strength);
+  if (method) parts.push(method);
+  if (confidence != null) parts.push(`score=${Number(confidence).toFixed(1)}`);
+  return parts.length ? ` ${parts.join(' ')}` : '';
+}
+
 function generateTitle(startedAt: string, speakers: string[]): string {
   const date = startedAt.slice(0, 10);
   const time = startedAt.slice(11, 16);
@@ -445,8 +530,9 @@ async function enhanceConversation(events: any[]): Promise<{
     .slice(0, 100)
     .map((e: any) => {
       const speaker = extractSpeaker(e.participants_json);
+      const attribution = formatAttribution(e.participants_json, e.metadata_json);
       const time = e.started_at.slice(11, 19);
-      return speaker ? `[${time} ${speaker}] ${e.content_text}` : `[${time}] ${e.content_text}`;
+      return speaker ? `[${time} ${speaker}${attribution}] ${e.content_text}` : `[${time}] ${e.content_text}`;
     });
 
   if (textSegments.length < 2) return null;
@@ -475,6 +561,10 @@ async function extractMemoryCandidatesAI(conv: any, transcript: string, apiKey?:
 
 Good examples: project context, people/relationships, preferences, habits, recurring tasks.
 Do NOT extract: generic public knowledge, repo stats, vague summaries, garbled text, small talk.
+Speaker attribution rules:
+- Treat confirmed speaker attribution as reliable evidence.
+- Treat low_confidence/conflict/weak attribution as weak evidence only.
+- If a long-term fact depends on exactly who said it and the speaker attribution is weak, do not promote it as a strong memory.
 Return 0-3 items. Most casual conversations should return [].
 
 Return JSON array: [{"candidate_text":"clear fact in content language","category":"person|relationship|project|preference|habit|work_context|recurring_task|fact","confidence":0.6-1.0,"evidence":"brief quote","why_long_term":"one sentence"}]

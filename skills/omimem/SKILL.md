@@ -95,10 +95,36 @@ DB_PATH=/www/omi-custom-tts-data/app.db DATA_ROOT=/www/omi-custom-tts-data \
 |------|------|
 | 事件时间线 | `npm run omimem -- timeline` |
 | 对话列表 / 详情 | `npm run omimem -- conversations` / `npm run omimem -- conversations --id <kc_id>` |
+| 按发言人查时间线 | `npm run omimem -- timeline --speaker <姓名或标签>` |
+| 按身份角色查对话 | `npm run omimem -- conversations --identity <客户/同事等>` |
+| 低置信发言人片段 | `npm run omimem -- low-confidence` |
+| 未确认发言人片段 | `npm run omimem -- unresolved-speakers` |
 | 长期记忆 | `npm run omimem -- memories` |
 | 记忆候选 | `npm run omimem -- memories --candidates` |
 | 自然语言问答 | `npm run omimem -- ask "问题"`（需 MiniMax，见「AI」） |
 | 统计 / 导出 | `npm run omimem -- stats` / `npm run omimem -- export --day YYYY-MM-DD` |
+
+### 发言人身份查询
+
+实时音频片段会在 `conversation_segments` 中保留 `speaker_id`、实名、身份角色、置信分、`resolution_method` 以及讯飞声纹 top/second match。新写入 `knowledge_events` 的 `participants_json` / `metadata_json` 也会带上这些信息，供 AI 工具判断“谁说了什么”以及归因是否可靠。
+
+常用过滤：
+
+```bash
+npm run omimem -- timeline --speaker 张三
+npm run omimem -- timeline --identity 客户
+npm run omimem -- timeline --resolution-method xfyun_low_confidence
+npm run omimem -- conversations --speaker 张三
+npm run omimem -- conversations --identity 客户 --has-low-confidence
+npm run omimem -- unresolved-speakers --limit 100
+```
+
+AI 使用规则：
+
+- `human_segment_confirmed`、`xfyun_segment_hit`、`xfyun_current_conversation_backfill_hit` 且有明确 `speaker_id` 的片段，可作为确定发言人证据。
+- `xfyun_low_confidence`、`xfyun_conflict` 只能作为弱证据；回答时必须表述为“可能是某人说的”或“需要复核”。
+- `xfyun_no_match`、`xfyun_error`、无 `speaker_id` 的片段，不得当作实名归因。
+- 从对话抽长期记忆时，如果事实依赖“是谁说的”，而说话人归因是低置信或冲突，不应直接写入 `knowledge_memories`；最多作为候选或复核线索。
 
 ### OMI memory 基线导入（与线上一致）
 

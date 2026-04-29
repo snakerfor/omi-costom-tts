@@ -36,6 +36,11 @@ import {
   setAiMemorySupplementEnabled,
 } from './services/knowledge-memory-service';
 import {
+  listKnowledgeConversations,
+  listKnowledgeTimeline,
+  listSpeakerReviewSegments,
+} from './services/knowledge-query-service';
+import {
   adminDir,
   appRoot,
   audioUploadsDir,
@@ -652,6 +657,69 @@ async function handleApiRequest(req: IncomingMessage, res: ServerResponse, urlOb
 
   if (req.method === 'GET' && urlObj.pathname === '/api/knowledge/memories/status') {
     sendJson(res, 200, { ok: true, data: getKnowledgeMemoryStatus() });
+    return true;
+  }
+
+  if (req.method === 'GET' && urlObj.pathname === '/api/knowledge/timeline') {
+    sendJson(res, 200, {
+      ok: true,
+      data: listKnowledgeTimeline({
+        from: urlObj.searchParams.get('from') || undefined,
+        to: urlObj.searchParams.get('to') || undefined,
+        type: urlObj.searchParams.get('type') || undefined,
+        speaker: urlObj.searchParams.get('speaker') || undefined,
+        speakerId: urlObj.searchParams.get('speaker_id') || undefined,
+        identity: urlObj.searchParams.get('identity') || undefined,
+        resolutionMethod: urlObj.searchParams.get('resolution_method') || undefined,
+        minConfidence: parseNumber(urlObj.searchParams.get('min_confidence'), NaN),
+        limit: parseNumber(urlObj.searchParams.get('limit'), 100),
+      }),
+    });
+    return true;
+  }
+
+  if (req.method === 'GET' && urlObj.pathname === '/api/knowledge/conversations') {
+    sendJson(res, 200, {
+      ok: true,
+      data: listKnowledgeConversations({
+        from: urlObj.searchParams.get('from') || undefined,
+        to: urlObj.searchParams.get('to') || undefined,
+        speaker: urlObj.searchParams.get('speaker') || undefined,
+        speakerId: urlObj.searchParams.get('speaker_id') || undefined,
+        identity: urlObj.searchParams.get('identity') || undefined,
+        hasLowConfidence: urlObj.searchParams.get('has_low_confidence') === 'true',
+        hasUnresolved: urlObj.searchParams.get('has_unresolved') === 'true',
+        limit: parseNumber(urlObj.searchParams.get('limit'), 20),
+      }),
+    });
+    return true;
+  }
+
+  if (req.method === 'GET' && urlObj.pathname === '/api/knowledge/speaker-review/low-confidence') {
+    sendJson(res, 200, {
+      ok: true,
+      data: listSpeakerReviewSegments('low-confidence', {
+        from: urlObj.searchParams.get('from') || undefined,
+        to: urlObj.searchParams.get('to') || undefined,
+        speaker: urlObj.searchParams.get('speaker') || undefined,
+        identity: urlObj.searchParams.get('identity') || undefined,
+        limit: parseNumber(urlObj.searchParams.get('limit'), 50),
+      }),
+    });
+    return true;
+  }
+
+  if (req.method === 'GET' && urlObj.pathname === '/api/knowledge/speaker-review/unresolved') {
+    sendJson(res, 200, {
+      ok: true,
+      data: listSpeakerReviewSegments('unresolved', {
+        from: urlObj.searchParams.get('from') || undefined,
+        to: urlObj.searchParams.get('to') || undefined,
+        speaker: urlObj.searchParams.get('speaker') || undefined,
+        identity: urlObj.searchParams.get('identity') || undefined,
+        limit: parseNumber(urlObj.searchParams.get('limit'), 50),
+      }),
+    });
     return true;
   }
 

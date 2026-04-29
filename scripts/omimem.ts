@@ -1,6 +1,11 @@
 import 'dotenv/config';
 import { db, initDb } from '../src/db';
 import { isAIAvailable, chatCompletion } from '../src/services/minimax-client';
+import {
+  listKnowledgeConversations,
+  listKnowledgeTimeline,
+  listSpeakerReviewSegments,
+} from '../src/services/knowledge-query-service';
 
 // ─── arg parsing ───
 
@@ -27,34 +32,17 @@ function cmdTimeline(): void {
   const to = getFlag('to') || `${todayISO()}T23:59:59.999Z`;
   const limit = parseInt(getFlag('limit') || '100', 10);
   const eventType = getFlag('type');
-
-  let sql = `
-    SELECT id, event_type, started_at, ended_at,
-           content_text, title, participants_json, source_table, source_row_id
-    FROM knowledge_events
-    WHERE started_at >= ? AND started_at <= ?
-  `;
-  const params: any[] = [from, to];
-
-  if (eventType) {
-    sql += ' AND event_type = ?';
-    params.push(eventType);
-  }
-
-  sql += ' ORDER BY started_at ASC LIMIT ?';
-  params.push(limit);
-
-  const rows = db.prepare(sql).all(...params) as Array<{
-    id: string;
-    event_type: string;
-    started_at: string;
-    ended_at: string | null;
-    content_text: string | null;
-    title: string | null;
-    participants_json: string | null;
-    source_table: string;
-    source_row_id: string;
-  }>;
+  const rows = listKnowledgeTimeline({
+    from,
+    to,
+    type: eventType,
+    speaker: getFlag('speaker'),
+    speakerId: getFlag('speaker-id'),
+    identity: getFlag('identity'),
+    resolutionMethod: getFlag('resolution-method'),
+    minConfidence: getFlag('min-confidence') ? Number(getFlag('min-confidence')) : undefined,
+    limit,
+  });
 
   if (!rows.length) {
     console.log(`No events found between ${from} and ${to}`);
@@ -66,11 +54,12 @@ function cmdTimeline(): void {
   for (const row of rows) {
     const time = row.started_at.slice(11, 19);
     const tag = row.event_type.padEnd(20);
-    const speaker = parseSpeaker(row.participants_json);
+    const speaker = row.speaker_name || row.speaker_identity || parseSpeaker(row.participants_json);
+    const attribution = formatAttribution(row.resolution_method, row.speaker_confidence, row.voiceprint_decision);
     const text = truncate(row.content_text || row.title || '(no content)', 120);
 
     if (speaker) {
-      console.log(`  ${time}  [${tag}]  ${speaker}: ${text}`);
+      console.log(`  ${time}  [${tag}]  ${speaker}${attribution}: ${text}`);
     } else {
       console.log(`  ${time}  [${tag}]  ${text}`);
     }
@@ -89,6 +78,11 @@ function cmdConversations(): void {
 
   if (convId) {
     showConversationDetail(convId);
+    return;
+  }
+
+  if (getFlag('speaker') || getFlag('speaker-id') || getFlag('identity') || process.argv.includes('--has-low-confidence') || process.argv.includes('--has-unresolved')) {
+    showSpeakerAwareConversations(from, to, limit);
     return;
   }
 
@@ -158,6 +152,34 @@ function cmdConversations(): void {
         }
       } catch {}
     }
+    console.log(`    id: ${row.id}`);
+    console.log('');
+  }
+}
+
+function showSpeakerAwareConversations(from: string, to: string, limit: number): void {
+  const rows = listKnowledgeConversations({
+    from,
+    to,
+    speaker: getFlag('speaker'),
+    speakerId: getFlag('speaker-id'),
+    identity: getFlag('identity'),
+    hasLowConfidence: process.argv.includes('--has-low-confidence'),
+    hasUnresolved: process.argv.includes('--has-unresolved'),
+    limit,
+  });
+
+  if (!rows.length) {
+    console.log(`No speaker-aware conversations found between ${from} and ${to}`);
+    return;
+  }
+
+  console.log(`Speaker-aware conversations: ${from} → ${to}  (${rows.length} results)\n`);
+  for (const row of rows) {
+    const startTime = row.started_at ? row.started_at.slice(11, 19) : '??:??:??';
+    const date = row.started_at ? row.started_at.slice(0, 10) : 'unknown';
+    console.log(`  ${date} ${startTime}  ${row.segment_count} segments  confirmed=${row.confirmed_speaker_count || 0} low=${row.low_confidence_count || 0} unresolved=${row.unresolved_count || 0}`);
+    if (row.summary_text) console.log(`    summary: ${truncate(row.summary_text, 160)}`);
     console.log(`    id: ${row.id}`);
     console.log('');
   }
@@ -319,6 +341,38 @@ function showMemoryCandidates(category: string | undefined, limit: number): void
     const status = row.status.padEnd(10);
     console.log(`  [${status}] ${row.category.padEnd(16)} ${conf.padStart(4)}  ${truncate(row.candidate_text, 80)}`);
     console.log(`    from: ${row.conversation_id}  date: ${row.created_at.slice(0, 10)}`);
+  }
+}
+
+// ─── speaker review ───
+
+function cmdSpeakerReview(mode: 'low-confidence' | 'unresolved'): void {
+  const rows = listSpeakerReviewSegments(mode, {
+    from: getFlag('from'),
+    to: getFlag('to'),
+    speaker: getFlag('speaker'),
+    identity: getFlag('identity'),
+    limit: parseInt(getFlag('limit') || '50', 10),
+  });
+
+  if (!rows.length) {
+    console.log(`No ${mode} speaker segments found.`);
+    return;
+  }
+
+  console.log(`${mode} speaker segments (${rows.length})\n`);
+  for (const row of rows) {
+    const time = row.started_at ? row.started_at.replace('T', ' ').slice(0, 19) : 'unknown';
+    const current = row.speaker_name || row.speaker_label || 'unknown';
+    const top = row.top_speaker_name
+      ? ` top=${row.top_speaker_name}${row.top_score != null ? `:${Number(row.top_score).toFixed(1)}` : ''}`
+      : '';
+    const second = row.second_speaker_name
+      ? ` second=${row.second_speaker_name}${row.second_score != null ? `:${Number(row.second_score).toFixed(1)}` : ''}`
+      : '';
+    console.log(`  ${time}  ${current}  [${row.resolution_method || row.voiceprint_decision || 'unknown'}]${top}${second}`);
+    console.log(`    ${truncate(row.text || '', 140)}`);
+    console.log(`    conversation: ${row.conversation_id}  segment: ${row.segment_id}`);
   }
 }
 
@@ -494,6 +548,14 @@ function parseSpeaker(json: string | null): string | null {
   }
 }
 
+function formatAttribution(resolutionMethod: string | null, confidence: number | null, voiceprintDecision?: string | null): string {
+  const method = resolutionMethod || voiceprintDecision;
+  const parts: string[] = [];
+  if (method) parts.push(method);
+  if (confidence != null) parts.push(`score=${Number(confidence).toFixed(1)}`);
+  return parts.length ? ` (${parts.join(', ')})` : '';
+}
+
 function truncate(text: string, maxLen: number): string {
   const oneLine = text.replace(/\n/g, ' ').trim();
   if (oneLine.length <= maxLen) return oneLine;
@@ -510,6 +572,9 @@ Commands:
   timeline       Show unified event timeline
   conversations  Show aggregated conversations (from knowledge_conversations)
   memories       Show long-term memories
+  low-confidence Show weak speaker attribution segments
+  unresolved-speakers
+                 Show segments that still need speaker review
   ask            Ask a question against your knowledge base
   stats          Show knowledge_events statistics
   export         Export a day's events as markdown or JSON
@@ -520,6 +585,17 @@ Options:
   --limit <n>       Max results (default varies)
   --type <type>     Filter event_type (timeline only)
   --id <id>         Show conversation detail (conversations only)
+  --speaker <name>  Filter by speaker name/label
+  --speaker-id <id> Filter by canonical speaker id
+  --identity <role> Filter by speaker identity label
+  --resolution-method <method>
+                   Filter by speaker attribution method
+  --min-confidence <n>
+                   Filter by attribution score (timeline only)
+  --has-low-confidence
+                   Filter conversations with weak speaker attribution
+  --has-unresolved
+                   Filter conversations with unresolved speaker segments
   --category <cat>  Filter memory category (memories only)
   --candidates      Show candidates instead of formal memories
   --day <date>      Date for export (default: today)
@@ -527,9 +603,13 @@ Options:
 
 Examples:
   npx ts-node scripts/omimem.ts timeline
+  npx ts-node scripts/omimem.ts timeline --speaker 张三
   npx ts-node scripts/omimem.ts timeline --from 2026-04-12T00:00:00Z --to 2026-04-12T23:59:59Z
   npx ts-node scripts/omimem.ts conversations --from 2026-04-01 --to 2026-04-12
+  npx ts-node scripts/omimem.ts conversations --identity 客户 --has-low-confidence
   npx ts-node scripts/omimem.ts conversations --id kc_abc123
+  npx ts-node scripts/omimem.ts low-confidence
+  npx ts-node scripts/omimem.ts unresolved-speakers
   npx ts-node scripts/omimem.ts memories
   npx ts-node scripts/omimem.ts memories --category person
   npx ts-node scripts/omimem.ts memories --candidates
@@ -554,6 +634,12 @@ async function main(): Promise<void> {
       break;
     case 'memories':
       cmdMemories();
+      break;
+    case 'low-confidence':
+      cmdSpeakerReview('low-confidence');
+      break;
+    case 'unresolved-speakers':
+      cmdSpeakerReview('unresolved');
       break;
     case 'ask':
       await cmdAsk();
