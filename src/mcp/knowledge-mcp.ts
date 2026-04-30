@@ -103,7 +103,8 @@ function authorizeMcpRequest(req: IncomingMessage, res: ServerResponse, urlObj: 
 
   const token = getRequestToken(req, urlObj);
   if (!token || (!isConfiguredToken(token) && !isValidOAuthAccessToken(token))) {
-    const metadataUrl = `${publicBaseUrl(req, urlObj)}/.well-known/oauth-protected-resource/mcp`;
+    const resourcePath = urlObj.pathname === '/sse' ? '/sse' : '/mcp';
+    const metadataUrl = `${publicBaseUrl(req, urlObj)}/.well-known/oauth-protected-resource${resourcePath}`;
     res.writeHead(401, {
       'Content-Type': 'application/json; charset=utf-8',
       'WWW-Authenticate': `Bearer resource_metadata="${metadataUrl}"`,
