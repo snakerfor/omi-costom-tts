@@ -637,10 +637,12 @@ function searchKnowledge(args: {
   const detectedRange = !args.from && !args.to ? detectDateRange(args.query, timeZone) : null;
   const searchTerm = detectedRange ? stripDateAndGenericTerms(args.query) : args.query.trim();
   const shouldUseTextFilter = searchTerm.length > 0;
+  const includeMemories = !detectedRange || shouldUseTextFilter;
   const q = makeLike(shouldUseTextFilter ? searchTerm : args.query);
   const from = args.from || detectedRange?.from || '0000-01-01T00:00:00.000Z';
   const to = args.to || detectedRange?.to || '9999-12-31T23:59:59.999Z';
-  const perBucket = Math.max(1, Math.ceil(limit / 3));
+  const bucketCount = includeMemories ? 3 : 2;
+  const perBucket = Math.max(1, Math.ceil(limit / bucketCount));
 
   const memoryTextFilter = shouldUseTextFilter
     ? `AND (
@@ -655,24 +657,26 @@ function searchKnowledge(args: {
   }
   memoryParams.push(perBucket);
 
-  const memories = db.prepare(`
-    SELECT
-      'memory' AS type,
-      id,
-      canonical_text AS text,
-      category,
-      subject_key,
-      confidence,
-      first_observed_at AS started_at,
-      last_observed_at AS ended_at
-    FROM knowledge_memories
-    WHERE status = 'active'
-      AND COALESCE(first_observed_at, created_at) <= ?
-      AND COALESCE(last_observed_at, updated_at, created_at) >= ?
-      ${memoryTextFilter}
-    ORDER BY COALESCE(last_observed_at, updated_at, created_at) DESC
-    LIMIT ?
-  `).all(...memoryParams);
+  const memories = includeMemories
+    ? db.prepare(`
+      SELECT
+        'memory' AS type,
+        id,
+        canonical_text AS text,
+        category,
+        subject_key,
+        confidence,
+        first_observed_at AS started_at,
+        last_observed_at AS ended_at
+      FROM knowledge_memories
+      WHERE status = 'active'
+        AND COALESCE(first_observed_at, created_at) <= ?
+        AND COALESCE(last_observed_at, updated_at, created_at) >= ?
+        ${memoryTextFilter}
+      ORDER BY COALESCE(last_observed_at, updated_at, created_at) DESC
+      LIMIT ?
+    `).all(...memoryParams)
+    : [];
 
   const conversationsWhere = [
     'kc.started_at <= ?',
