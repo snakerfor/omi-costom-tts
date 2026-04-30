@@ -61,6 +61,12 @@ DATA_ROOT=/www/omi-custom-tts-data
 DB_PATH=/www/omi-custom-tts-data/app.db
 SONIOX_LANGUAGE_HINTS=zh,en
 SESSION_MAX_DURATION_MS=1800000
+
+# ChatGPT / MCP 连接器只读访问 token；不设置时会回退使用 ACCESS_TOKENS
+MCP_ACCESS_TOKENS=token-chatgpt-a
+
+# ChatGPT OAuth 首次授权页面口令；不设置时会回退使用 MCP_ACCESS_TOKENS/ACCESS_TOKENS 中第一个 token
+MCP_OAUTH_APPROVAL_TOKEN=one-time-approval-token
 EOF
 ```
 
@@ -70,6 +76,8 @@ EOF
 - `DB_PATH` 建议显式配置，避免服务默认写入当前工作目录下的 `app.db`
 - 音频、raw/finalized/preview 结果、桌面视频 chunk 默认都会跟随 `DATA_ROOT`
 - `SESSION_MAX_DURATION_MS` 默认 1800000，即 30 分钟；到时服务会结束当前会话并关闭连接，客户端重连后生成新的对话
+- `MCP_ACCESS_TOKENS` 建议单独配置给 ChatGPT MCP 使用；服务同时支持 `Authorization: Bearer <token>` 和 URL query `?api_key=<token>`
+- `MCP_OAUTH_APPROVAL_TOKEN` 用于 ChatGPT OAuth 首次授权时的人工确认；授权完成后 ChatGPT 使用 OAuth access token / refresh token
 
 ### 2.1 现有服务器从旧结构升级
 
@@ -243,6 +251,43 @@ WebSocket URL: wss://your-server.com/stt
 ```text
 wss://47.116.162.110/stt
 ```
+
+## ChatGPT MCP 连接器配置
+
+服务内置只读 MCP server，用于让 ChatGPT 查询个人知识层。
+
+可用 endpoint：
+
+```text
+https://your-server.com/mcp
+https://your-server.com/sse
+```
+
+说明：
+
+- `/mcp` 是新版 Streamable HTTP transport。
+- `/sse` 是兼容 ChatGPT 自定义连接器界面中常见的 SSE URL。
+- 推荐在 ChatGPT 连接器中选择 OAuth。服务提供：
+  - `/.well-known/oauth-protected-resource/mcp`
+  - `/.well-known/oauth-authorization-server`
+  - `/oauth/register`
+  - `/oauth/authorize`
+  - `/oauth/token`
+- OAuth 支持 dynamic client registration、authorization code + PKCE、refresh token。
+- 首次连接时浏览器会打开授权页，输入 `MCP_OAUTH_APPROVAL_TOKEN` 完成授权。
+- 如果连接器界面支持 Bearer token，也可直接填 `MCP_ACCESS_TOKENS` 中的任一 token。
+- 如果界面只能填写 URL，可临时使用 `https://your-server.com/sse?api_key=token-chatgpt-a`，但更推荐 OAuth 或 Bearer token，避免 token 出现在日志或浏览器历史里。
+
+当前 MCP 工具均为只读：
+
+| 工具 | 说明 |
+|------|------|
+| `search` | 跨长期记忆、聚合会话、时间线事件搜索 |
+| `fetch` | 按 id 拉取 memory / conversation / event 详情 |
+| `list_timeline` | 按时间、发言人、身份、置信度列出事件 |
+| `list_conversations` | 列出聚合会话 |
+| `list_memories` | 列出长期记忆 |
+| `review_speaker_segments` | 查询低置信或未确认发言人片段 |
 
 ## Nginx 反向代理（可选）
 

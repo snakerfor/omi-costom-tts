@@ -52,6 +52,7 @@ import {
 } from './runtime-paths';
 import { getSpeakerCandidateDetail, listPendingSpeakerCandidates } from './services/speaker-candidate-query-service';
 import { confirmCandidate, saveCandidateDecisions } from './services/speaker-candidate-confirm-service';
+import { handleMcpRequest } from './mcp/knowledge-mcp';
 import {
   applySpeakerMaterials,
   backfillConversationVoiceprintSegments,
@@ -928,6 +929,10 @@ const server = createServer((req, res) => {
 
     if (urlObj.pathname === '/healthz') {
       sendJson(res, 200, { status: 'ok' });
+      return;
+    }
+
+    if (await handleMcpRequest(req, res, urlObj)) {
       return;
     }
 

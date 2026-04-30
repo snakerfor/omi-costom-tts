@@ -31,13 +31,15 @@
     "generate:pcm": "ffmpeg -i tests/test.m4a -f s16le -ar 16000 -ac 1 tests/test.pcm"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@playwright/test": "^1.49.0",
     "@soniox/node": "^1.1.2",
     "@types/better-sqlite3": "^7.6.13",
     "better-sqlite3": "^12.8.0",
     "dotenv": "^16.4.5",
     "playwright": "^1.49.0",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

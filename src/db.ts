@@ -351,6 +351,39 @@ export function initDb(): void {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS oauth_clients (
+      client_id TEXT PRIMARY KEY,
+      client_secret TEXT,
+      redirect_uris_json TEXT NOT NULL,
+      metadata_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS oauth_authorization_codes (
+      code TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      redirect_uri TEXT NOT NULL,
+      code_challenge TEXT NOT NULL,
+      scope TEXT,
+      resource TEXT,
+      expires_at TEXT NOT NULL,
+      consumed_at TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS oauth_tokens (
+      access_token_hash TEXT PRIMARY KEY,
+      refresh_token_hash TEXT UNIQUE,
+      client_id TEXT NOT NULL,
+      scope TEXT,
+      resource TEXT,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS speaker_voiceprint_features (
       id TEXT PRIMARY KEY,
       speaker_id TEXT NOT NULL,
@@ -512,6 +545,13 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_knowledge_events_session_ref ON knowledge_events(session_ref);
     CREATE INDEX IF NOT EXISTS idx_knowledge_events_conversation_ref ON knowledge_events(conversation_ref);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_events_dedupe_key ON knowledge_events(dedupe_key);
+
+    CREATE INDEX IF NOT EXISTS idx_oauth_authorization_codes_client_id
+      ON oauth_authorization_codes(client_id);
+    CREATE INDEX IF NOT EXISTS idx_oauth_tokens_client_id
+      ON oauth_tokens(client_id);
+    CREATE INDEX IF NOT EXISTS idx_oauth_tokens_refresh_hash
+      ON oauth_tokens(refresh_token_hash);
   `);
 
 }
