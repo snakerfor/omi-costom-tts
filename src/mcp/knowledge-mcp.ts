@@ -1055,6 +1055,7 @@ async function handleStreamableHttp(req: IncomingMessage, res: ServerResponse, u
 async function handleSse(req: IncomingMessage, res: ServerResponse, urlObj: URL): Promise<void> {
   if (!authorizeMcpRequest(req, res, urlObj)) return;
 
+  res.setHeader('X-Accel-Buffering', 'no');
   const transport = new SSEServerTransport('/messages', res);
   transports.set(transport.sessionId, transport);
   transport.onclose = () => {
