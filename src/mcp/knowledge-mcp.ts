@@ -129,6 +129,124 @@ function makeLike(value: string): string {
   return `%${value.trim()}%`;
 }
 
+function mcpDefaultTimeZone(): string {
+  return process.env.MCP_DEFAULT_TIMEZONE || process.env.TZ || 'Asia/Shanghai';
+}
+
+function getTimeZoneOffsetMs(date: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  const asUtc = Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day),
+    Number(values.hour),
+    Number(values.minute),
+    Number(values.second),
+  );
+  return asUtc - date.getTime();
+}
+
+function localDateParts(date: Date, timeZone: string): { year: number; month: number; day: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return {
+    year: Number(values.year),
+    month: Number(values.month),
+    day: Number(values.day),
+  };
+}
+
+function addLocalDays(parts: { year: number; month: number; day: number }, days: number): { year: number; month: number; day: number } {
+  const shifted = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days, 12));
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+  };
+}
+
+function localDayRangeUtc(parts: { year: number; month: number; day: number }, timeZone: string): { from: string; to: string; label: string } {
+  const next = addLocalDays(parts, 1);
+  const startApprox = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 12));
+  const endApprox = new Date(Date.UTC(next.year, next.month - 1, next.day, 12));
+  const startOffset = getTimeZoneOffsetMs(startApprox, timeZone);
+  const endOffset = getTimeZoneOffsetMs(endApprox, timeZone);
+  const startUtcMs = Date.UTC(parts.year, parts.month - 1, parts.day) - startOffset;
+  const endUtcMs = Date.UTC(next.year, next.month - 1, next.day) - endOffset - 1;
+  const label = `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+  return {
+    from: new Date(startUtcMs).toISOString(),
+    to: new Date(endUtcMs).toISOString(),
+    label,
+  };
+}
+
+function detectDateRange(query: string, timeZone: string): { from: string; to: string; label: string; kind: string } | null {
+  const nowParts = localDateParts(new Date(), timeZone);
+  const normalized = query.trim();
+
+  if (/(今天|今日|today)/i.test(normalized)) {
+    return { ...localDayRangeUtc(nowParts, timeZone), kind: 'today' };
+  }
+
+  if (/(昨天|昨日|yesterday)/i.test(normalized)) {
+    return { ...localDayRangeUtc(addLocalDays(nowParts, -1), timeZone), kind: 'yesterday' };
+  }
+
+  const fullDate = /(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?/.exec(normalized);
+  if (fullDate) {
+    return {
+      ...localDayRangeUtc({
+        year: Number(fullDate[1]),
+        month: Number(fullDate[2]),
+        day: Number(fullDate[3]),
+      }, timeZone),
+      kind: 'date',
+    };
+  }
+
+  const monthDay = /(?:^|[^\d])(\d{1,2})月(\d{1,2})日?/.exec(normalized);
+  if (monthDay) {
+    return {
+      ...localDayRangeUtc({
+        year: nowParts.year,
+        month: Number(monthDay[1]),
+        day: Number(monthDay[2]),
+      }, timeZone),
+      kind: 'date',
+    };
+  }
+
+  return null;
+}
+
+function stripDateAndGenericTerms(query: string): string {
+  return query
+    .replace(/(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?/g, ' ')
+    .replace(/(?:^|[^\d])\d{1,2}月\d{1,2}日?/g, ' ')
+    .replace(/今天|今日|昨天|昨日|today|yesterday/gi, ' ')
+    .replace(/我|我的|的|一下|查|查找|看看|看下|记录|活动|事情|相关|今天|昨天/g, ' ')
+    .replace(/做了啥|做了什么|干了啥|干了什么|发生了什么|happened|what did i do/gi, ' ')
+    .replace(/[，。！？、,.!?()"“”'@]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function parseJson(value: string | null | undefined): unknown {
   if (!value) return null;
   try {
@@ -511,13 +629,31 @@ function searchKnowledge(args: {
   to?: string;
   speaker?: string;
   identity?: string;
+  timeZone?: string;
   limit?: number;
 }) {
   const limit = clampLimit(args.limit, 10, 50);
-  const q = makeLike(args.query);
-  const from = args.from || '0000-01-01T00:00:00.000Z';
-  const to = args.to || '9999-12-31T23:59:59.999Z';
+  const timeZone = args.timeZone || mcpDefaultTimeZone();
+  const detectedRange = !args.from && !args.to ? detectDateRange(args.query, timeZone) : null;
+  const searchTerm = detectedRange ? stripDateAndGenericTerms(args.query) : args.query.trim();
+  const shouldUseTextFilter = searchTerm.length > 0;
+  const q = makeLike(shouldUseTextFilter ? searchTerm : args.query);
+  const from = args.from || detectedRange?.from || '0000-01-01T00:00:00.000Z';
+  const to = args.to || detectedRange?.to || '9999-12-31T23:59:59.999Z';
   const perBucket = Math.max(1, Math.ceil(limit / 3));
+
+  const memoryTextFilter = shouldUseTextFilter
+    ? `AND (
+        canonical_text LIKE ?
+        OR COALESCE(category, '') LIKE ?
+        OR COALESCE(subject_key, '') LIKE ?
+      )`
+    : '';
+  const memoryParams: unknown[] = [to, from];
+  if (shouldUseTextFilter) {
+    memoryParams.push(q, q, q);
+  }
+  memoryParams.push(perBucket);
 
   const memories = db.prepare(`
     SELECT
@@ -533,27 +669,26 @@ function searchKnowledge(args: {
     WHERE status = 'active'
       AND COALESCE(first_observed_at, created_at) <= ?
       AND COALESCE(last_observed_at, updated_at, created_at) >= ?
-      AND (
-        canonical_text LIKE ?
-        OR COALESCE(category, '') LIKE ?
-        OR COALESCE(subject_key, '') LIKE ?
-      )
+      ${memoryTextFilter}
     ORDER BY COALESCE(last_observed_at, updated_at, created_at) DESC
     LIMIT ?
-  `).all(to, from, q, q, q, perBucket);
+  `).all(...memoryParams);
 
   const conversationsWhere = [
     'kc.started_at <= ?',
     'COALESCE(kc.ended_at, kc.updated_at, kc.started_at) >= ?',
-    `(
+  ];
+  const conversationsParams: unknown[] = [to, from];
+  if (shouldUseTextFilter) {
+    conversationsWhere.push(`(
       COALESCE(kc.title, '') LIKE ?
       OR COALESCE(kc.summary, '') LIKE ?
       OR COALESCE(kc.participants_json, '') LIKE ?
       OR COALESCE(kc.topics_json, '') LIKE ?
       OR COALESCE(kc.action_items_json, '') LIKE ?
-    )`,
-  ];
-  const conversationsParams: unknown[] = [to, from, q, q, q, q, q];
+    )`);
+    conversationsParams.push(q, q, q, q, q);
+  }
 
   if (args.speaker) {
     conversationsWhere.push('COALESCE(kc.participants_json, \'\') LIKE ?');
@@ -579,14 +714,17 @@ function searchKnowledge(args: {
   const eventsWhere = [
     'ke.started_at <= ?',
     'COALESCE(ke.ended_at, ke.updated_at, ke.started_at) >= ?',
-    `(
+  ];
+  const eventsParams: unknown[] = [to, from];
+  if (shouldUseTextFilter) {
+    eventsWhere.push(`(
       COALESCE(ke.content_text, '') LIKE ?
       OR COALESCE(ke.title, '') LIKE ?
       OR COALESCE(ke.participants_json, '') LIKE ?
       OR COALESCE(ke.metadata_json, '') LIKE ?
-    )`,
-  ];
-  const eventsParams: unknown[] = [to, from, q, q, q, q];
+    )`);
+    eventsParams.push(q, q, q, q);
+  }
 
   if (args.speaker || args.identity) {
     eventsWhere.push(`EXISTS (
@@ -630,7 +768,20 @@ function searchKnowledge(args: {
     LIMIT ?
   `).all(...eventsParams, perBucket);
 
-  return [...memories, ...conversations, ...events].slice(0, limit);
+  return {
+    query: args.query,
+    interpreted_time_range: detectedRange
+      ? {
+          label: detectedRange.label,
+          kind: detectedRange.kind,
+          timeZone,
+          from,
+          to,
+        }
+      : null,
+    text_filter: shouldUseTextFilter ? searchTerm : null,
+    results: [...memories, ...conversations, ...events].slice(0, limit),
+  };
 }
 
 function fetchMemory(id: string) {
@@ -745,9 +896,10 @@ function createKnowledgeMcpServer(): any {
       to: z.string().optional().describe('Optional ISO end time.'),
       speaker: z.string().optional().describe('Optional speaker name or label filter.'),
       identity: z.string().optional().describe('Optional speaker identity/role filter.'),
+      timeZone: z.string().optional().describe('Optional IANA timezone for natural date words such as today/yesterday. Defaults to Asia/Shanghai.'),
       limit: z.number().int().min(1).max(50).optional(),
     },
-  }, async (args: any) => textResult({ results: searchKnowledge(args) }));
+  }, async (args: any) => textResult(searchKnowledge(args)));
 
   server.registerTool('fetch', {
     title: 'Fetch knowledge item',
