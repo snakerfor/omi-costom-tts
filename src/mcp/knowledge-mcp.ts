@@ -139,6 +139,9 @@ function parseJson(value: string | null | undefined): unknown {
 }
 
 function publicBaseUrl(req: IncomingMessage, urlObj: URL): string {
+  if (process.env.MCP_PUBLIC_BASE_URL) {
+    return process.env.MCP_PUBLIC_BASE_URL.replace(/\/+$/, '');
+  }
   const protoHeader = req.headers['x-forwarded-proto'];
   const hostHeader = req.headers['x-forwarded-host'] || req.headers.host;
   const proto = Array.isArray(protoHeader) ? protoHeader[0] : protoHeader;

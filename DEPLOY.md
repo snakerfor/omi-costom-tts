@@ -67,6 +67,9 @@ MCP_ACCESS_TOKENS=token-chatgpt-a
 
 # ChatGPT OAuth 首次授权页面口令；不设置时会回退使用 MCP_ACCESS_TOKENS/ACCESS_TOKENS 中第一个 token
 MCP_OAUTH_APPROVAL_TOKEN=one-time-approval-token
+
+# 公网 HTTPS 入口；用于 OAuth discovery 中生成正确 issuer/endpoints
+MCP_PUBLIC_BASE_URL=https://your-server.com
 EOF
 ```
 
@@ -78,6 +81,7 @@ EOF
 - `SESSION_MAX_DURATION_MS` 默认 1800000，即 30 分钟；到时服务会结束当前会话并关闭连接，客户端重连后生成新的对话
 - `MCP_ACCESS_TOKENS` 建议单独配置给 ChatGPT MCP 使用；服务同时支持 `Authorization: Bearer <token>` 和 URL query `?api_key=<token>`
 - `MCP_OAUTH_APPROVAL_TOKEN` 用于 ChatGPT OAuth 首次授权时的人工确认；授权完成后 ChatGPT 使用 OAuth access token / refresh token
+- `MCP_PUBLIC_BASE_URL` 必须是 ChatGPT 能访问的公网 HTTPS 根地址；否则 OAuth discovery 可能在反向代理后生成错误的 `http://` 地址
 
 ### 2.1 现有服务器从旧结构升级
 
