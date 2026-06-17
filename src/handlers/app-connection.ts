@@ -91,6 +91,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   let audioQueue: Buffer[] = [];
   let sonioxConnected = false;
   let sonioxAcceptingAudio = false;
+  let sonioxUnavailable = false;
   let pendingCloseStream = false;
   let committedEnd = 0; // Track last sent segment end to prevent overlap
   let wavFinalized = false; // Prevent double-finalize
@@ -145,6 +146,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   let timelineWriteTimer: NodeJS.Timeout | null = null;
   let timelineWriteInFlight = Promise.resolve();
   let quietHoursFinalizeStarted = false;
+  let sttUnavailableSegmentSent = false;
 
   void recorderReady.catch(err => {
     console.error('[Recorder] init failed:', err);
@@ -657,7 +659,19 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   }
 
   function sendSttUnavailableSegment(err: unknown): void {
+    if (sttUnavailableSegmentSent) {
+      return;
+    }
+    sttUnavailableSegmentSent = true;
     sendFinalSegment(buildSttUnavailableSegment(err));
+  }
+
+  function markSonioxUnavailable(err: unknown): void {
+    sonioxUnavailable = true;
+    stopAcceptingAudio();
+    audioQueue = [];
+    sendSttUnavailableSegment(err);
+    console.warn('[Soniox] STT unavailable; continuing to record audio locally.');
   }
 
   function applyVadDecision(audioData: Buffer): void {
@@ -711,9 +725,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     sonioxSession = createSonioxSession();
   } catch (err) {
     console.error('[Soniox] Failed to create session:', err);
-    sendSttUnavailableSegment(err);
-    void finalizeOnce('soniox_error');
-    ws.close(1011, 'STT init error');
+    markSonioxUnavailable(err);
     return;
   }
 
@@ -761,11 +773,8 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   });
 
   sonioxSession.on('error', (err: Error) => {
-    stopAcceptingAudio();
     console.error('[Soniox] Session error:', err);
-    sendSttUnavailableSegment(err);
-    void finalizeOnce('soniox_error');
-    ws.close(1011, 'STT error');
+    markSonioxUnavailable(err);
   });
 
   sonioxSession.on('disconnected', (reason?: string) => {
@@ -805,10 +814,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   // 4. Connect (async)
   sonioxSession.connect().catch((err: Error) => {
     console.error('[Soniox] Connect failed:', err);
-    stopAcceptingAudio();
-    sendSttUnavailableSegment(err);
-    void finalizeOnce('soniox_error');
-    ws.close(1011, 'STT connect error');
+    markSonioxUnavailable(err);
   });
 
   // 5. Handle APP messages
@@ -828,7 +834,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
 
       if (sonioxConnected && sonioxAcceptingAudio && sonioxSession) {
         applyVadDecision(audioData);
-      } else if (!finalizeStarted) {
+      } else if (!finalizeStarted && !sonioxUnavailable) {
         // Queue raw chunks so VAD can replay them in-order once Soniox is connected.
         audioQueue.push(audioData);
       }
