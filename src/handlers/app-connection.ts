@@ -2,6 +2,7 @@ import WebSocket from 'ws';
 import { IncomingMessage } from 'http';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import * as fsSync from 'fs';
 import { createHash } from 'crypto';
 import { validateConnection } from '../middleware/auth';
 import { createSonioxSession } from '../services/soniox-session';
@@ -193,6 +194,71 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     }
   }
 
+  function estimateWavDurationMs(): number {
+    try {
+      const stat = fsSync.statSync(audioFilePath);
+      if (!Number.isFinite(stat.size) || stat.size < 44) {
+        return 0;
+      }
+      return Math.max(0, Math.round(((stat.size - 44) / 32000) * 1000));
+    } catch {
+      return 0;
+    }
+  }
+
+  function expandUnavailableSegmentsToAudioDuration(segments: Segment[], durationMs: number): Segment[] {
+    if (!durationMs) {
+      return segments;
+    }
+
+    return segments.map(seg => {
+      if (seg.speaker_resolution !== 'stt_unavailable' || Number(seg.end || 0) > Number(seg.start || 0)) {
+        return seg;
+      }
+      return {
+        ...seg,
+        start: 0,
+        end: durationMs / 1000,
+      };
+    });
+  }
+
+  function expandFinalizedUnavailableSegmentsToAudioDuration<T extends { start_ms: number; end_ms: number; absolute_start_time: string; absolute_end_time: string; resolution_method?: string | null }>(
+    segments: T[],
+    durationMs: number,
+    recordingStartedAt: string,
+  ): T[] {
+    if (!durationMs) {
+      return segments;
+    }
+
+    const startedAtMs = new Date(recordingStartedAt).getTime();
+    return segments.map(seg => {
+      if (seg.resolution_method !== 'stt_unavailable' || seg.end_ms > seg.start_ms) {
+        return seg;
+      }
+      return {
+        ...seg,
+        start_ms: 0,
+        end_ms: durationMs,
+        absolute_start_time: new Date(startedAtMs).toISOString(),
+        absolute_end_time: new Date(startedAtMs + durationMs).toISOString(),
+      };
+    });
+  }
+
+  async function rewriteFinalizedSegments(outPath: string, segments: unknown[]): Promise<void> {
+    try {
+      const raw = await fs.readFile(outPath, 'utf8');
+      const parsed = JSON.parse(raw) as { segments?: unknown[]; segment_count?: number };
+      parsed.segments = segments;
+      parsed.segment_count = segments.length;
+      await fs.writeFile(outPath, JSON.stringify(parsed, null, 2), 'utf8');
+    } catch (err) {
+      console.warn('[Finalize] failed to rewrite finalized segments:', String((err as Error)?.message ?? err));
+    }
+  }
+
   async function finalizeOnce(reason: 'close_stream' | 'ws_close' | 'soniox_error' | 'timeout'): Promise<void> {
     if (finalizeStarted) return;
     finalizeStarted = true;
@@ -214,6 +280,13 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
         outputDir: finalizedResultsDir,
         recordingStartedAt: firstAudioFrameAt ?? connectedAt,
       });
+      const estimatedAudioDurationMs = estimateWavDurationMs();
+      finalized.segments = expandFinalizedUnavailableSegmentsToAudioDuration(
+        finalized.segments,
+        estimatedAudioDurationMs,
+        firstAudioFrameAt ?? connectedAt,
+      );
+      await rewriteFinalizedSegments(finalized.outPath, finalized.segments);
       const aligned = await alignConversationSpeakers({
         sessionId,
         audioPath: audioFilePath,
@@ -225,9 +298,10 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       );
 
       const now = new Date().toISOString();
-      const durationMs = segmentsForStorage.length
-        ? Math.max(...segmentsForStorage.map(seg => seg.end_ms))
-        : 0;
+      const durationMs = Math.max(
+        estimatedAudioDurationMs,
+        segmentsForStorage.length ? Math.max(...segmentsForStorage.map(seg => seg.end_ms)) : 0,
+      );
       const vadStats = vadGate.getStatsSnapshot();
 
       const tx = db.transaction(() => {
@@ -639,7 +713,8 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   async function recordAndSendFinalSegment(seg: Segment): Promise<void> {
     const segmentId = seg.id || genId('seg');
     const withId: Segment = { ...seg, id: segmentId };
-    const enriched = await enrichSegmentWithRealtimeVoiceprint(withId);
+    const [expanded] = expandUnavailableSegmentsToAudioDuration([withId], estimateWavDurationMs());
+    const enriched = await enrichSegmentWithRealtimeVoiceprint(expanded);
     try {
       await recorder.appendFinalSegment(enriched, firstAudioFrameAt ?? connectedAt, segmentId);
     } catch (err) {
