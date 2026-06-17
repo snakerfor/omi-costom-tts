@@ -212,7 +212,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     }
 
     return segments.map(seg => {
-      if (seg.speaker_resolution !== 'stt_unavailable' || Number(seg.end || 0) > Number(seg.start || 0)) {
+      if (seg.speaker_resolution !== 'stt_unavailable') {
         return seg;
       }
       return {
@@ -234,7 +234,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
 
     const startedAtMs = new Date(recordingStartedAt).getTime();
     return segments.map(seg => {
-      if (seg.resolution_method !== 'stt_unavailable' || seg.end_ms > seg.start_ms) {
+      if (seg.resolution_method !== 'stt_unavailable') {
         return seg;
       }
       return {
