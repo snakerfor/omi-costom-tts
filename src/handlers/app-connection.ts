@@ -18,6 +18,8 @@ import { SentAudioRingBuffer } from '../services/sent-audio-ring-buffer';
 import { syncConversationSegments } from '../services/knowledge-ingest';
 import { audioUploadsDir, finalizedResultsDir, rawResultsDir } from '../runtime-paths';
 import { identifyRealtimeVoiceprintSpeakerFromPcm, recordRealtimeVoiceprintMatch } from '../services/voiceprint/segment-voiceprint-service';
+import { getQuietHoursStatus } from '../services/quiet-hours';
+import { buildSttUnavailableSegment } from '../services/stt-fallback';
 
 function shouldRunSpeakerIdentityMapping(): boolean {
   return process.env.ENABLE_SPEAKER_IDENTITY_MAPPING === 'true';
@@ -61,6 +63,16 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     ws.close(4401, 'Unauthorized');
     return;
   }
+
+  const initialQuietHours = getQuietHoursStatus();
+  if (initialQuietHours.active) {
+    console.log(
+      `[QuietHours] closing connection during quiet hours, local_time=${initialQuietHours.localTime}, window=${initialQuietHours.config.start}-${initialQuietHours.config.end}, tz=${initialQuietHours.config.timezone}`,
+    );
+    ws.close(4002, 'quiet_hours_suppressed');
+    return;
+  }
+
   const clientUid = resolveClientUid(req);
 
   const existingConnection = activeConnectionsByUid.get(clientUid);
@@ -89,6 +101,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   let accumulatedSilenceMs = 0;
   let idleWatchdog: NodeJS.Timeout | null = null;
   let maxSessionTimer: NodeJS.Timeout | null = null;
+  let quietHoursTimer: NodeJS.Timeout | null = null;
   let sentTimelineCursorMs = 0;
   let finalSegmentQueue = Promise.resolve();
   const sentToOriginalTimeline: Array<{
@@ -131,6 +144,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   const recorderReady = recorder.init();
   let timelineWriteTimer: NodeJS.Timeout | null = null;
   let timelineWriteInFlight = Promise.resolve();
+  let quietHoursFinalizeStarted = false;
 
   void recorderReady.catch(err => {
     console.error('[Recorder] init failed:', err);
@@ -357,9 +371,17 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     }
   }
 
+  function clearQuietHoursTimer(): void {
+    if (quietHoursTimer) {
+      clearTimeout(quietHoursTimer);
+      quietHoursTimer = null;
+    }
+  }
+
   function clearSessionTimers(): void {
     clearIdleWatchdog();
     clearMaxSessionTimer();
+    clearQuietHoursTimer();
   }
 
   function chunkDurationMs(data: Buffer): number {
@@ -473,7 +495,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     await writeTimelineMapSnapshot();
   }
 
-  function finalizeByTimeout(reason: string): void {
+  function finalizeByTimeout(reason: string, closeCode = 4000): void {
     if (finalizeStarted) {
       return;
     }
@@ -491,10 +513,30 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     void finalizeOnce('timeout');
 
     try {
-      ws.close(4000, reason);
+      ws.close(closeCode, reason);
     } catch {
       // Ignore close failure.
     }
+  }
+
+  function shouldDropForQuietHours(): boolean {
+    const status = getQuietHoursStatus();
+    if (!status.active) {
+      return false;
+    }
+
+    if (!quietHoursFinalizeStarted) {
+      quietHoursFinalizeStarted = true;
+      console.log(
+        `[QuietHours] suppressing audio session=${sessionId}, local_time=${status.localTime}, window=${status.config.start}-${status.config.end}, tz=${status.config.timezone}`,
+      );
+
+      if (firstAudioFrameAt) {
+        finalizeByTimeout('quiet_hours_suppressed', 4002);
+      }
+    }
+
+    return true;
   }
 
   function stopAcceptingAudio(): void {
@@ -614,6 +656,10 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       });
   }
 
+  function sendSttUnavailableSegment(err: unknown): void {
+    sendFinalSegment(buildSttUnavailableSegment(err));
+  }
+
   function applyVadDecision(audioData: Buffer): void {
     const decision = vadGate.processChunk(audioData);
     const durationMs = chunkDurationMs(audioData);
@@ -665,6 +711,8 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     sonioxSession = createSonioxSession();
   } catch (err) {
     console.error('[Soniox] Failed to create session:', err);
+    sendSttUnavailableSegment(err);
+    void finalizeOnce('soniox_error');
     ws.close(1011, 'STT init error');
     return;
   }
@@ -715,6 +763,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   sonioxSession.on('error', (err: Error) => {
     stopAcceptingAudio();
     console.error('[Soniox] Session error:', err);
+    sendSttUnavailableSegment(err);
     void finalizeOnce('soniox_error');
     ws.close(1011, 'STT error');
   });
@@ -756,6 +805,9 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   // 4. Connect (async)
   sonioxSession.connect().catch((err: Error) => {
     console.error('[Soniox] Connect failed:', err);
+    stopAcceptingAudio();
+    sendSttUnavailableSegment(err);
+    void finalizeOnce('soniox_error');
     ws.close(1011, 'STT connect error');
   });
 
@@ -764,6 +816,9 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     if (isBinary) {
       const audioData = data as Buffer;
       lastAudioPacketAtMs = Date.now();
+      if (shouldDropForQuietHours()) {
+        return;
+      }
       if (!firstAudioFrameAt) {
         firstAudioFrameAt = new Date().toISOString();
       }
@@ -841,5 +896,14 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     maxSessionTimer = setTimeout(() => {
       finalizeByTimeout(`max_session_duration_${sessionMaxDurationMs}ms`);
     }, sessionMaxDurationMs);
+  }
+
+  const nextQuietHours = getQuietHoursStatus();
+  if (!nextQuietHours.active && nextQuietHours.minutesUntilStart != null) {
+    quietHoursTimer = setTimeout(() => {
+      if (getQuietHoursStatus().active) {
+        finalizeByTimeout('quiet_hours_suppressed', 4002);
+      }
+    }, nextQuietHours.minutesUntilStart * 60 * 1000);
   }
 }

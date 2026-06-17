@@ -10,6 +10,8 @@ import { AudioFileWriter } from '../src/services/audio-file-writer';
 import { assignLocalSpeakerClusters, findBestMatchFromRows } from '../src/services/speaker-mapper';
 import { alignByOverlap, smoothBoundaryRows } from '../src/services/speaker-alignment';
 import { StreamVadGate } from '../src/services/stream-vad-gate';
+import { getQuietHoursStatus } from '../src/services/quiet-hours';
+import { buildSttUnavailableSegment } from '../src/services/stt-fallback';
 
 async function testValidateConnection(): Promise<void> {
   process.env.ACCESS_TOKENS = 'token-a,token-b';
@@ -180,6 +182,51 @@ async function testAudioFileWriterStreams(tmpDir: string): Promise<void> {
 
   const stat = await fs.stat(outPath);
   assert.equal(stat.size, 44 + 480, 'wav size should equal header plus PCM data');
+}
+
+function testQuietHoursWindowDetection(): void {
+  const baseConfig = {
+    enabled: true,
+    timezone: 'Asia/Shanghai',
+    start: '22:00',
+    end: '08:00',
+    mode: 'drop_audio' as const,
+  };
+
+  assert.equal(
+    getQuietHoursStatus(new Date('2026-06-17T14:30:00.000Z'), baseConfig).active,
+    true,
+    '22:30 local time should fall inside quiet hours',
+  );
+  assert.equal(
+    getQuietHoursStatus(new Date('2026-06-17T01:30:00.000Z'), baseConfig).active,
+    false,
+    '09:30 local time should be outside quiet hours',
+  );
+  assert.equal(
+    getQuietHoursStatus(new Date('2026-06-17T00:30:00.000Z'), {
+      ...baseConfig,
+      start: '08:00',
+      end: '10:00',
+    }).active,
+    true,
+    'same-day quiet window should work without crossing midnight',
+  );
+}
+
+function testSttUnavailableSegment(): void {
+  const authSeg = buildSttUnavailableSegment(new Error('401 invalid api key'));
+  assert.ok(
+    authSeg.text.includes('实时转录不可用') && authSeg.text.includes('认证失败或已过期'),
+    'auth failures should produce a readable expired/unavailable transcript segment',
+  );
+  assert.equal(authSeg.speaker_resolution, 'stt_unavailable');
+
+  const outageSeg = buildSttUnavailableSegment(new Error('network timeout'));
+  assert.ok(
+    outageSeg.text.includes('实时转录不可用') && outageSeg.text.includes('当前不可用'),
+    'generic failures should produce a readable unavailable transcript segment',
+  );
 }
 
 function testSpeakerMatchRequiresThresholdAndMargin(): void {
@@ -426,6 +473,8 @@ async function main(): Promise<void> {
     testSegmentBuilder();
     await testFinalizeConversationHandlesMissingAndDuplicates(tmpDir);
     await testAudioFileWriterStreams(tmpDir);
+    testQuietHoursWindowDetection();
+    testSttUnavailableSegment();
     testSpeakerMatchRequiresThresholdAndMargin();
     testLocalClusterMergesDifferentSonioxLabels();
     testLocalClusterBridgesShortInterjection();
