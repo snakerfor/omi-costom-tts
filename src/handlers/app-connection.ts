@@ -98,6 +98,8 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   let wavFinalized = false; // Prevent double-finalize
   let finalizeStarted = false;
   let firstAudioFrameAt: string | null = null;
+  let receivedAudioBytes = 0;
+  let receivedAudioChunks = 0;
   let sonioxPausedByVad = false;
   let lastAudioPacketAtMs = Date.now();
   let accumulatedSilenceMs = 0;
@@ -173,9 +175,9 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       clientUid,
       'recording',
       connectedAt,
-      connectedAt,
+      null,
       recorder.filePath,
-      audioFilePath,
+      null,
       connectedAt,
       connectedAt,
     );
@@ -186,6 +188,18 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   async function ensureWavFinalized(logPrefix: string): Promise<void> {
     if (wavFinalized) return;
     wavFinalized = true;
+    if (receivedAudioBytes <= 0) {
+      try {
+        const stat = await fs.stat(audioFilePath);
+        if (stat.size <= 44) {
+          await fs.unlink(audioFilePath);
+        }
+      } catch {
+        // No file was opened because no audio was written.
+      }
+      console.log(`${logPrefix} skipped empty WAV session=${sessionId}`);
+      return;
+    }
     try {
       const filepath = await wavWriter.finish();
       console.log(`${logPrefix} ${filepath}`);
@@ -195,6 +209,9 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
   }
 
   function estimateWavDurationMs(): number {
+    if (receivedAudioBytes > 0) {
+      return Math.max(0, Math.round((receivedAudioBytes / 32000) * 1000));
+    }
     try {
       const stat = fsSync.statSync(audioFilePath);
       if (!Number.isFinite(stat.size) || stat.size < 44) {
@@ -259,18 +276,74 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
     }
   }
 
+  function markNoAudioConversation(reason: string): void {
+    const now = new Date().toISOString();
+    const vadStats = vadGate.getStatsSnapshot();
+    try {
+      db.prepare(`
+        UPDATE conversations
+        SET status = ?, first_audio_frame_at = NULL, ended_at = ?, audio_file_path = NULL,
+            updated_at = ?, error_message = ?,
+            vad_mode = ?, vad_total_audio_ms = ?, vad_detected_speech_ms = ?, vad_detected_silence_ms = ?,
+            vad_sent_audio_ms = ?, vad_suppressed_audio_ms = ?, vad_potential_suppressed_audio_ms = ?, vad_state_transitions = ?
+        WHERE id = ?
+      `).run(
+        'failed',
+        now,
+        now,
+        `no_audio_received: ${reason}`,
+        vadStats.mode,
+        vadStats.totalAudioMs,
+        vadStats.detectedSpeechMs,
+        vadStats.detectedSilenceMs,
+        vadStats.sentAudioMs,
+        vadStats.suppressedAudioMs,
+        vadStats.potentialSuppressedAudioMs,
+        vadStats.stateTransitions,
+        conversationId,
+      );
+      console.log(
+        `[Finalize] session=${sessionId}, reason=${reason}, no_audio_received=true, audio_chunks=${receivedAudioChunks}, audio_bytes=${receivedAudioBytes}, vad_total_ms=${vadStats.totalAudioMs}`,
+      );
+    } catch (err) {
+      console.error('[DB] failed to mark no-audio conversation:', err);
+    }
+  }
+
+  function markFirstAudioFrameIfNeeded(): void {
+    if (firstAudioFrameAt) {
+      return;
+    }
+    firstAudioFrameAt = new Date().toISOString();
+    try {
+      db.prepare(`
+        UPDATE conversations
+        SET first_audio_frame_at = ?, audio_file_path = ?, updated_at = ?
+        WHERE id = ?
+      `).run(firstAudioFrameAt, audioFilePath, firstAudioFrameAt, conversationId);
+    } catch (err) {
+      console.error('[DB] failed to mark first audio frame:', err);
+    }
+    console.log(`[AudioFile] first audio frame session=${sessionId}, path=${audioFilePath}`);
+  }
+
   async function finalizeOnce(reason: 'close_stream' | 'ws_close' | 'soniox_error' | 'timeout'): Promise<void> {
     if (finalizeStarted) return;
     finalizeStarted = true;
     clearSessionTimers();
 
     await recorderReady.catch(() => undefined);
-    await ensureWavFinalized('[AudioFile] Saved WAV:');
     await finalSegmentQueue.catch(() => undefined);
     try {
       await flushTimelineMapWrite();
     } catch (err) {
       console.warn('[Recorder] timeline map write failed:', String((err as Error)?.message ?? err));
+    }
+    await ensureWavFinalized('[AudioFile] Saved WAV:');
+
+    if (receivedAudioBytes <= 0) {
+      markNoAudioConversation(reason);
+      return;
     }
 
     try {
@@ -400,7 +473,7 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
       }
 
       console.log(
-        `[Finalize] session=${sessionId}, reason=${reason}, output=${finalized.outPath}, segments=${segmentsForStorage.length}, alignment=${aligned.alignmentOutputPath || 'disabled'}, identity_mapping=${shouldRunSpeakerIdentityMapping() ? 'enabled' : 'disabled'}, vad_mode=${vadStats.mode}, vad_total_ms=${vadStats.totalAudioMs}, vad_speech_ms=${vadStats.detectedSpeechMs}, vad_sent_ms=${vadStats.sentAudioMs}, vad_actual_suppressed_ms=${vadStats.suppressedAudioMs}, vad_potential_suppressed_ms=${vadStats.potentialSuppressedAudioMs}`,
+        `[Finalize] session=${sessionId}, reason=${reason}, output=${finalized.outPath}, segments=${segmentsForStorage.length}, audio_chunks=${receivedAudioChunks}, audio_bytes=${receivedAudioBytes}, audio_duration_ms=${estimatedAudioDurationMs}, alignment=${aligned.alignmentOutputPath || 'disabled'}, identity_mapping=${shouldRunSpeakerIdentityMapping() ? 'enabled' : 'disabled'}, vad_mode=${vadStats.mode}, vad_total_ms=${vadStats.totalAudioMs}, vad_speech_ms=${vadStats.detectedSpeechMs}, vad_sent_ms=${vadStats.sentAudioMs}, vad_actual_suppressed_ms=${vadStats.suppressedAudioMs}, vad_potential_suppressed_ms=${vadStats.potentialSuppressedAudioMs}`,
       );
     } catch (err) {
       console.error('[Finalize] failed:', err);
@@ -901,10 +974,12 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
         return;
       }
       if (!firstAudioFrameAt) {
-        firstAudioFrameAt = new Date().toISOString();
+        markFirstAudioFrameIfNeeded();
       }
       if (!wavFinalized) {
         wavWriter.write(audioData);
+        receivedAudioBytes += audioData.length;
+        receivedAudioChunks += 1;
       }
 
       if (sonioxConnected && sonioxAcceptingAudio && sonioxSession) {
