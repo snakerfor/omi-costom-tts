@@ -21,7 +21,7 @@ function nowIso(): string {
 // ═══════════════════════════════════════════════════════════════════
 
 const insertEvent = () => db.prepare(`
-  INSERT OR IGNORE INTO knowledge_events (
+  INSERT IGNORE INTO knowledge_events (
     id, source_type, source_table, source_row_id, source_key,
     session_ref, conversation_ref, event_type,
     started_at, ended_at, content_text, title,
@@ -226,10 +226,26 @@ interface PendingConvRef {
 }
 
 export async function aggregateNewConversations(): Promise<number> {
-  const existingRefs = new Set(
-    (db.prepare(`SELECT json_each.value AS ref FROM knowledge_conversations, json_each(source_refs_json)`).all() as any[])
-      .map((r: any) => r.ref)
-  );
+  const existingRefs = new Set<string>();
+  const existingRows = db.prepare(`
+    SELECT source_refs_json
+    FROM knowledge_conversations
+  `).all() as Array<{ source_refs_json: string | null }>;
+  for (const row of existingRows) {
+    if (!row.source_refs_json) continue;
+    try {
+      const refs = JSON.parse(row.source_refs_json);
+      if (Array.isArray(refs)) {
+        for (const ref of refs) {
+          if (typeof ref === 'string' && ref.trim()) {
+            existingRefs.add(ref);
+          }
+        }
+      }
+    } catch {
+      continue;
+    }
+  }
 
   const audioRefs = db.prepare(`
     SELECT conversation_ref, COUNT(*) AS event_count

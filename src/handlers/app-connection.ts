@@ -379,10 +379,19 @@ export function handleAppConnection(ws: WebSocket, req: IncomingMessage): void {
 
       const tx = db.transaction(() => {
         db.prepare(`
-          INSERT OR REPLACE INTO audio_files (
+          INSERT INTO audio_files (
             id, conversation_id, file_path, file_name, duration_ms,
             sample_rate, channels, bits_per_sample, created_at, updated_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            conversation_id = VALUES(conversation_id),
+            file_path = VALUES(file_path),
+            file_name = VALUES(file_name),
+            duration_ms = VALUES(duration_ms),
+            sample_rate = VALUES(sample_rate),
+            channels = VALUES(channels),
+            bits_per_sample = VALUES(bits_per_sample),
+            updated_at = VALUES(updated_at)
         `).run(
           audioFileId,
           conversationId,

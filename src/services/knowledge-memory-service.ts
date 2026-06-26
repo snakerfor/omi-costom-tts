@@ -117,9 +117,9 @@ function setSetting(key: string, value: string | null): void {
   db.prepare(`
     INSERT INTO knowledge_runtime_settings (key, value_text, updated_at)
     VALUES (?, ?, ?)
-    ON CONFLICT(key) DO UPDATE SET
-      value_text = excluded.value_text,
-      updated_at = excluded.updated_at
+    ON DUPLICATE KEY UPDATE
+      value_text = VALUES(value_text),
+      updated_at = VALUES(updated_at)
   `).run(key, value, nowIso());
 }
 

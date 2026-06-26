@@ -276,11 +276,24 @@ function persistDraft(draft: ConversationDraft, ai: {
   const participantsArr = [...draft.participants];
 
   db.prepare(`
-    INSERT OR REPLACE INTO knowledge_conversations (
+    INSERT INTO knowledge_conversations (
       id, started_at, ended_at, primary_source, source_refs_json,
       participants_json, title, summary, topics_json, action_items_json,
       quality_score, review_status, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      started_at = VALUES(started_at),
+      ended_at = VALUES(ended_at),
+      primary_source = VALUES(primary_source),
+      source_refs_json = VALUES(source_refs_json),
+      participants_json = VALUES(participants_json),
+      title = VALUES(title),
+      summary = VALUES(summary),
+      topics_json = VALUES(topics_json),
+      action_items_json = VALUES(action_items_json),
+      quality_score = VALUES(quality_score),
+      review_status = VALUES(review_status),
+      updated_at = VALUES(updated_at)
   `).run(
     draft.id,
     draft.started_at,

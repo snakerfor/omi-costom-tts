@@ -49,10 +49,10 @@ function ensureSource(sourceKey: string, sourceName?: string): void {
   db.prepare(`
     INSERT INTO omi_sync_sources (source_key, display_name, last_seen_at, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(source_key) DO UPDATE SET
-      display_name = excluded.display_name,
-      last_seen_at = excluded.last_seen_at,
-      updated_at = excluded.updated_at
+    ON DUPLICATE KEY UPDATE
+      display_name = VALUES(display_name),
+      last_seen_at = VALUES(last_seen_at),
+      updated_at = VALUES(updated_at)
   `).run(sourceKey, sourceName ?? null, now, now, now);
 }
 
@@ -61,10 +61,10 @@ function updateCheckpoint(sourceKey: string, entityName: OmiEntityName, lastRece
   db.prepare(`
     INSERT INTO omi_sync_checkpoints (source_key, entity_name, last_received_id, last_received_at, updated_at)
     VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(source_key, entity_name) DO UPDATE SET
-      last_received_id = MAX(omi_sync_checkpoints.last_received_id, excluded.last_received_id),
-      last_received_at = excluded.last_received_at,
-      updated_at = excluded.updated_at
+    ON DUPLICATE KEY UPDATE
+      last_received_id = GREATEST(last_received_id, VALUES(last_received_id)),
+      last_received_at = VALUES(last_received_at),
+      updated_at = VALUES(updated_at)
   `).run(sourceKey, entityName, lastReceivedId, now, now);
 }
 
@@ -75,17 +75,17 @@ function upsertScreenshot(sourceKey: string, row: OmiPayloadRow): void {
       id, source_key, source_screenshot_id, ts, app_name, window_title, image_path, ocr_text,
       focus_status, video_chunk_path, frame_offset, raw_payload_json, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(source_key, source_screenshot_id) DO UPDATE SET
-      ts = excluded.ts,
-      app_name = excluded.app_name,
-      window_title = excluded.window_title,
-      image_path = excluded.image_path,
-      ocr_text = excluded.ocr_text,
-      focus_status = excluded.focus_status,
-      video_chunk_path = excluded.video_chunk_path,
-      frame_offset = excluded.frame_offset,
-      raw_payload_json = excluded.raw_payload_json,
-      updated_at = excluded.updated_at
+    ON DUPLICATE KEY UPDATE
+      ts = VALUES(ts),
+      app_name = VALUES(app_name),
+      window_title = VALUES(window_title),
+      image_path = VALUES(image_path),
+      ocr_text = VALUES(ocr_text),
+      focus_status = VALUES(focus_status),
+      video_chunk_path = VALUES(video_chunk_path),
+      frame_offset = VALUES(frame_offset),
+      raw_payload_json = VALUES(raw_payload_json),
+      updated_at = VALUES(updated_at)
   `).run(
     genId('omiscr'),
     sourceKey,
@@ -111,16 +111,16 @@ function upsertTranscriptionSession(sourceKey: string, row: OmiPayloadRow): void
       id, source_key, source_session_id, started_at, finished_at, source, language, status,
       title, overview, raw_payload_json, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(source_key, source_session_id) DO UPDATE SET
-      started_at = excluded.started_at,
-      finished_at = excluded.finished_at,
-      source = excluded.source,
-      language = excluded.language,
-      status = excluded.status,
-      title = excluded.title,
-      overview = excluded.overview,
-      raw_payload_json = excluded.raw_payload_json,
-      updated_at = excluded.updated_at
+    ON DUPLICATE KEY UPDATE
+      started_at = VALUES(started_at),
+      finished_at = VALUES(finished_at),
+      source = VALUES(source),
+      language = VALUES(language),
+      status = VALUES(status),
+      title = VALUES(title),
+      overview = VALUES(overview),
+      raw_payload_json = VALUES(raw_payload_json),
+      updated_at = VALUES(updated_at)
   `).run(
     genId('omits'),
     sourceKey,
@@ -145,16 +145,16 @@ function upsertTranscriptionSegment(sourceKey: string, row: OmiPayloadRow): void
       id, source_key, source_segment_id, source_session_id, speaker, speaker_label, text,
       start_time, end_time, segment_order, raw_payload_json, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(source_key, source_segment_id) DO UPDATE SET
-      source_session_id = excluded.source_session_id,
-      speaker = excluded.speaker,
-      speaker_label = excluded.speaker_label,
-      text = excluded.text,
-      start_time = excluded.start_time,
-      end_time = excluded.end_time,
-      segment_order = excluded.segment_order,
-      raw_payload_json = excluded.raw_payload_json,
-      updated_at = excluded.updated_at
+    ON DUPLICATE KEY UPDATE
+      source_session_id = VALUES(source_session_id),
+      speaker = VALUES(speaker),
+      speaker_label = VALUES(speaker_label),
+      text = VALUES(text),
+      start_time = VALUES(start_time),
+      end_time = VALUES(end_time),
+      segment_order = VALUES(segment_order),
+      raw_payload_json = VALUES(raw_payload_json),
+      updated_at = VALUES(updated_at)
   `).run(
     genId('omitseg'),
     sourceKey,
@@ -180,15 +180,15 @@ function upsertObservation(sourceKey: string, row: OmiPayloadRow): void {
       id, source_key, source_observation_id, source_screenshot_id, app_name, context_summary,
       current_activity, has_task, task_title, raw_payload_json, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(source_key, source_observation_id) DO UPDATE SET
-      source_screenshot_id = excluded.source_screenshot_id,
-      app_name = excluded.app_name,
-      context_summary = excluded.context_summary,
-      current_activity = excluded.current_activity,
-      has_task = excluded.has_task,
-      task_title = excluded.task_title,
-      raw_payload_json = excluded.raw_payload_json,
-      updated_at = excluded.updated_at
+    ON DUPLICATE KEY UPDATE
+      source_screenshot_id = VALUES(source_screenshot_id),
+      app_name = VALUES(app_name),
+      context_summary = VALUES(context_summary),
+      current_activity = VALUES(current_activity),
+      has_task = VALUES(has_task),
+      task_title = VALUES(task_title),
+      raw_payload_json = VALUES(raw_payload_json),
+      updated_at = VALUES(updated_at)
   `).run(
     genId('omiobs'),
     sourceKey,
@@ -212,16 +212,16 @@ function upsertMemory(sourceKey: string, row: OmiPayloadRow): void {
       id, source_key, source_memory_id, backend_id, content, category, source_app, confidence,
       created_at_source, updated_at_source, raw_payload_json, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(source_key, source_memory_id) DO UPDATE SET
-      backend_id = excluded.backend_id,
-      content = excluded.content,
-      category = excluded.category,
-      source_app = excluded.source_app,
-      confidence = excluded.confidence,
-      created_at_source = excluded.created_at_source,
-      updated_at_source = excluded.updated_at_source,
-      raw_payload_json = excluded.raw_payload_json,
-      updated_at = excluded.updated_at
+    ON DUPLICATE KEY UPDATE
+      backend_id = VALUES(backend_id),
+      content = VALUES(content),
+      category = VALUES(category),
+      source_app = VALUES(source_app),
+      confidence = VALUES(confidence),
+      created_at_source = VALUES(created_at_source),
+      updated_at_source = VALUES(updated_at_source),
+      raw_payload_json = VALUES(raw_payload_json),
+      updated_at = VALUES(updated_at)
   `).run(
     genId('omimem'),
     sourceKey,
@@ -339,13 +339,13 @@ export function storeVideoChunk(request: VideoUploadRequest, body: Buffer): Reco
       id, source_key, video_chunk_path, sha256, size_bytes, storage_path, upload_status,
       first_seen_at, last_uploaded_at, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(source_key, video_chunk_path) DO UPDATE SET
-      sha256 = excluded.sha256,
-      size_bytes = excluded.size_bytes,
-      storage_path = excluded.storage_path,
-      upload_status = excluded.upload_status,
-      last_uploaded_at = excluded.last_uploaded_at,
-      updated_at = excluded.updated_at
+    ON DUPLICATE KEY UPDATE
+      sha256 = VALUES(sha256),
+      size_bytes = VALUES(size_bytes),
+      storage_path = VALUES(storage_path),
+      upload_status = VALUES(upload_status),
+      last_uploaded_at = VALUES(last_uploaded_at),
+      updated_at = VALUES(updated_at)
   `).run(
     genId('omivid'),
     request.sourceKey,
@@ -368,4 +368,3 @@ export function storeVideoChunk(request: VideoUploadRequest, body: Buffer): Reco
     sizeBytes,
   };
 }
-

@@ -15,6 +15,7 @@
     "rebuild:native": "npm rebuild better-sqlite3",
     "audit:recovery": "ts-node scripts/audit-recovery-matrix.ts",
     "recover:low-cost": "ts-node scripts/recover-low-cost-conversations.ts",
+    "migrate:mysql": "ts-node scripts/migrate-sqlite-to-mysql.ts",
     "import:omi-memories": "ts-node scripts/import-omi-memories.ts",
     "rebuild:knowledge": "ts-node scripts/rebuild-knowledge-events.ts",
     "rebuild:conversations": "ts-node scripts/rebuild-knowledge-conversations.ts",
@@ -37,7 +38,9 @@
     "@types/better-sqlite3": "^7.6.13",
     "better-sqlite3": "^12.8.0",
     "dotenv": "^16.4.5",
+    "mysql2": "^3.22.5",
     "playwright": "^1.49.0",
+    "sync-mysql": "^3.0.1",
     "ws": "^8.18.0",
     "zod": "^3.25.76"
   },

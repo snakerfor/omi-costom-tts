@@ -369,11 +369,11 @@ export function addSpeakerVoiceprintMaterials(input: {
     INSERT INTO speaker_voiceprint_materials (
       id, speaker_id, segment_id, material_status, source, note, sort_order, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)
-    ON CONFLICT(speaker_id, segment_id) DO UPDATE SET
-      material_status = excluded.material_status,
-      source = COALESCE(excluded.source, speaker_voiceprint_materials.source),
-      note = COALESCE(excluded.note, speaker_voiceprint_materials.note),
-      updated_at = excluded.updated_at
+    ON DUPLICATE KEY UPDATE
+      material_status = VALUES(material_status),
+      source = COALESCE(VALUES(source), speaker_voiceprint_materials.source),
+      note = COALESCE(VALUES(note), speaker_voiceprint_materials.note),
+      updated_at = VALUES(updated_at)
   `);
   const tx = db.transaction(() => {
     for (const segmentId of segmentIds) {
@@ -552,9 +552,12 @@ export async function syncSpeakerVoiceprintMaterials(speakerId: string) {
 
   const txSegments = db.transaction(() => {
     const insertSegment = db.prepare(`
-      INSERT OR REPLACE INTO speaker_enrollment_segments (
+      INSERT INTO speaker_enrollment_segments (
         enrollment_batch_id, segment_id, decision, created_at
       ) VALUES (?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        decision = VALUES(decision),
+        created_at = VALUES(created_at)
     `);
     for (const row of formalRows) {
       insertSegment.run(batchId, row.id, 'keep', new Date().toISOString());
