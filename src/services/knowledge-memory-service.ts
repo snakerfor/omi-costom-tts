@@ -108,14 +108,14 @@ function getSetting(key: string): string | null {
   const row = db.prepare(`
     SELECT value_text
     FROM knowledge_runtime_settings
-    WHERE key = ?
+    WHERE \`key\` = ?
   `).get(key) as { value_text: string | null } | undefined;
   return row?.value_text ?? null;
 }
 
 function setSetting(key: string, value: string | null): void {
   db.prepare(`
-    INSERT INTO knowledge_runtime_settings (key, value_text, updated_at)
+    INSERT INTO knowledge_runtime_settings (\`key\`, value_text, updated_at)
     VALUES (?, ?, ?)
     ON DUPLICATE KEY UPDATE
       value_text = VALUES(value_text),
