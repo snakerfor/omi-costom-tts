@@ -50,16 +50,22 @@ class MySqlDb {
     const user = process.env.MYSQL_USER || 'root';
     const password = process.env.MYSQL_PASSWORD || '';
     const database = process.env.MYSQL_DATABASE || 'omi_custom_tts';
-    const socketPath = process.env.MYSQL_SOCKET_PATH || '/var/lib/mysql/mysql.sock';
+    const socketPath = process.env.MYSQL_SOCKET_PATH;
 
-    this.inner = new SyncMysql({
+    const connectionConfig: any = {
       host,
       port,
       user,
       password,
       database,
-      socketPath,
-    });
+    };
+
+    // Only use socketPath if we are connecting to localhost/127.0.0.1 and socketPath is specified
+    if (socketPath && (host === '127.0.0.1' || host === 'localhost')) {
+      connectionConfig.socketPath = socketPath;
+    }
+
+    this.inner = new SyncMysql(connectionConfig);
   }
 
   prepare(sql: string) {
