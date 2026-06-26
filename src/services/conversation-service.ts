@@ -354,24 +354,23 @@ export function getConversationDetail(conversationId: string): ConversationDetai
 
   const speakers = db.prepare(`
     SELECT
-      CASE WHEN cs.speaker_id IS NULL THEN cs.speaker_label ELSE NULL END AS speaker_label,
-      cs.speaker_id,
+      MAX(CASE WHEN cs.speaker_id IS NULL THEN cs.speaker_label ELSE NULL END) AS speaker_label,
+      MAX(cs.speaker_id) AS speaker_id,
       COALESCE(MAX(s.name), MAX(cs.speaker_name)) AS speaker_name,
       COALESCE(
-        CASE WHEN cs.speaker_id IS NOT NULL THEN MAX(s.name) END,
-        CASE WHEN cs.speaker_id IS NOT NULL THEN MAX(s.display_label) END,
-        CASE WHEN cs.speaker_id IS NOT NULL THEN MAX(cs.speaker_name) END,
-        CASE WHEN cs.speaker_id IS NULL THEN cs.speaker_label END,
-        CASE WHEN cs.speaker_id IS NULL THEN '未知发言人' END,
+        MAX(CASE WHEN cs.speaker_id IS NOT NULL THEN s.name END),
+        MAX(CASE WHEN cs.speaker_id IS NOT NULL THEN s.display_label END),
+        MAX(CASE WHEN cs.speaker_id IS NOT NULL THEN cs.speaker_name END),
+        MAX(CASE WHEN cs.speaker_id IS NULL THEN cs.speaker_label END),
         '未知发言人'
       ) AS display_name,
       COALESCE(MAX(s.identity_label), MAX(cs.speaker_identity)) AS identity_label,
       COUNT(cs.id) AS segment_count,
       SUM(COALESCE(cs.end_ms, 0) - COALESCE(cs.start_ms, 0)) AS total_duration_ms,
-      CASE
+      MAX(CASE
         WHEN ${HAS_RESOLVED_SPEAKER_EXPR} THEN 1
         ELSE 0
-      END AS is_confirmed
+      END) AS is_confirmed
     FROM conversation_segments cs
     LEFT JOIN speakers s ON s.id = cs.speaker_id
     WHERE cs.conversation_id = ?
